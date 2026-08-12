@@ -1,0 +1,17 @@
+[Unit]
+Description=Xray Bridge Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/vp
+ExecStart=/root/vp/venv/bin/python3 /root/vp/app.py
+Restart=always
+RestartSec=5
+Environment=PORT=5000
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

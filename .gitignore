@@ -1,0 +1,43 @@
+# ── Never commit these ────────────────────────────────────────────────────────
+# Signing keys and their passwords. Losing them ends your ability to update a
+# published app; publishing them lets anyone impersonate it.
+*.jks
+*.keystore
+key.properties
+.secret_key
+
+# Live data and credentials.
+*.db
+*.db.bak*
+*.sqlite
+*.sqlite3
+instance/
+.env
+*.pem
+*.p12
+
+# ── Build output ──────────────────────────────────────────────────────────────
+build/
+.dart_tool/
+.gradle/
+__pycache__/
+*.py[cod]
+*.aab
+*.apk
+*.exe
+*.zip
+*.rar
+
+# Flutter's generated per-platform glue.
+**/flutter/ephemeral/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# ── Editors ───────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+PUBLISHING.md

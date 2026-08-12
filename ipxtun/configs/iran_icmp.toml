@@ -1,0 +1,65 @@
+# IRAN side (server) - ICMP tunnel
+#
+# Traffic rides inside ICMP echo replies, which most filters treat as ordinary
+# ping responses. Addresses and ports are shifted so this can run alongside the
+# existing backhaul icmp tunnel.
+#
+# Note this is an ALTERNATIVE to iran_bip.toml, not an addition: both listen on
+# the same public ports, so run one or the other on this box.
+
+[transport]
+type = "tun"
+heartbeat_interval = 10
+heartbeat_timeout = 25
+
+[tun]
+encapsulation = "ipx"
+name = "ipx-icmp"               # backhaul uses "backhaul-icmp"
+local_addr = "10.30.10.1/24"    # backhaul uses 10.10.10.1/24
+remote_addr = "10.30.10.2/24"
+health_port = 21234             # backhaul uses 1234
+mtu = 1320
+
+[ipx]
+mode = "server"
+profile = "icmp"
+listen_ip = "203.0.113.10"
+dst_ip = "198.51.100.10"
+interface = "eth0"
+# Type 0 = echo reply. Deliberate: an unsolicited reply is silently dropped by
+# the peer's kernel, so nothing answers us and traffic stays one-for-one.
+# Type 8 (echo request) would make the peer kernel generate a real reply to
+# every packet, doubling traffic and standing out.
+icmp_type = 0
+icmp_code = 0
+
+[security]
+enable_encryption = true
+algorithm = "aes-256-gcm"
+# PLACEHOLDER - generate your own with `ipxtun -genpsk`.
+# This key also decides our ICMP identifier, which is how this tunnel tells its
+# own packets apart from another one sharing the same raw socket. A distinct
+# psk is therefore what keeps two icmp tunnels from interfering.
+psk = "REPLACE-ME-run-openssl-rand-base64-32"
+kdf_iterations = 100000
+padding = 0
+
+[tuning]
+auto_tuning = true
+tuning_profile = "balanced"
+workers = 0
+channel_size = 4096
+so_sndbuf = 0
+so_rcvbuf = 0
+
+[logging]
+log_level = "info"
+
+[ports]
+forwarder = "native"
+mapping = [
+    "18080=8081",
+    "18040=8041",
+    "18020=8021",
+    "15001=5000",
+]

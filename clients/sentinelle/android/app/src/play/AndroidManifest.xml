@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Google Play flavour overrides.
+
+    Play's Device and Network Abuse policy: "An app distributed via Google Play
+    may not modify, replace, or update itself using any method other than
+    Google Play's update mechanism." Breaking it is an account-level
+    enforcement, not a rejection you fix and resubmit.
+
+    The main manifest is written for the sideloaded build, where the panel is
+    the only distribution channel there is and self-updating is the whole point.
+    Everything that makes that possible is stripped back out here, so the
+    capability is absent from the APK rather than merely unused: a reviewer
+    reads the merged manifest, and so do the automated scanners.
+
+    The Dart and Kotlin sides are switched off separately — see
+    `kSelfUpdate` in lib/branding.dart and `BuildConfig.SELF_UPDATE` in
+    app/build.gradle.kts.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The permission behind handing an APK to the system installer. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+        tools:node="remove" />
+
+    <!--
+        Play's Data safety form asks whether all collected data is encrypted in
+        transit, and this build answers yes.
+
+        The real enforcement is in Dart — `kRequireHttps` in lib/branding.dart,
+        which stops `PanelApi` ever forming an http:// candidate — because
+        Flutter's dart:io sockets do not consult Android's network security
+        policy. The attribute below is corroboration: it is the line a reviewer
+        greps for, and it does close every platform-level channel (WebView,
+        java.net) that the Dart check would not cover.
+    -->
+    <application android:usesCleartextTraffic="false">
+        <!-- Existed only to grant the installer a read URI for the download. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            tools:node="remove" />
+    </application>
+</manifest>

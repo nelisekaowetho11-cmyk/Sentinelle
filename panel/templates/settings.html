@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Settings — Xray Panel{% endblock %}
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+<div class="settings-grid">
+
+  <!-- Server settings -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title"><i data-feather="server"></i> Server Settings</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="server" />
+        <div class="field">
+          <label for="server_ip">Server IP / Domain</label>
+          <input type="text" id="server_ip" name="server_ip"
+                 placeholder="e.g. 193.176.243.160 or vpn.example.com"
+                 value="{{ server_ip }}" />
+          <small class="hint">Used when generating client connection links.</small>
+        </div>
+        <div class="field">
+          <label for="xray_binary">Xray Binary Path</label>
+          <input type="text" id="xray_binary" name="xray_binary"
+                 placeholder="./xray-linux-amd64"
+                 value="{{ xray_binary }}" />
+          <small class="hint">Full or relative path to the Xray executable.</small>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <i data-feather="save"></i> Save Settings
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change password -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title"><i data-feather="lock"></i> Change Password</h2>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="password" />
+        <div class="field">
+          <label for="current">Current Password</label>
+          <div class="input-wrap">
+            <i data-feather="lock" class="input-icon"></i>
+            <input type="password" id="current" name="current" placeholder="••••••••" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="new">New Password</label>
+          <div class="input-wrap">
+            <i data-feather="key" class="input-icon"></i>
+            <input type="password" id="new" name="new" placeholder="Min. 6 characters" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="confirm">Confirm New Password</label>
+          <div class="input-wrap">
+            <i data-feather="check" class="input-icon"></i>
+            <input type="password" id="confirm" name="confirm" placeholder="Repeat new password" required />
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            <i data-feather="check-circle"></i> Update Password
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- About -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title"><i data-feather="info"></i> About</h2>
+    </div>
+    <div class="card-body">
+      <div class="about-grid">
+        <div class="about-row"><span class="muted">Panel</span><span>Xray Web Panel</span></div>
+        <div class="about-row"><span class="muted">Built with</span><span>Python / Flask</span></div>
+        <div class="about-row"><span class="muted">Admin</span><span>{{ current_user.username }}</span></div>
+      </div>
+      <div style="margin-top:1.25rem;display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn btn-secondary" onclick="testBinary()">
+          <i data-feather="terminal"></i> Test Xray Binary
+        </button>
+        <a href="{{ url_for('api_config_download') }}" class="btn btn-secondary">
+          <i data-feather="download"></i> Download Active Config
+        </a>
+      </div>
+      <div id="binary-result" style="display:none;margin-top:1rem" class="code-block"></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function testBinary() {
+  const res  = await fetch('/api/generate-keys', { method: 'POST' });
+  const data = await res.json();
+  const el   = document.getElementById('binary-result');
+  el.style.display = '';
+  if (data.error) {
+    el.textContent = '✗ Error: ' + data.error;
+    el.style.color = 'var(--danger)';
+  } else {
+    el.textContent = '✓ Xray binary works!\n\nPublic key sample:\n' + data.public_key;
+    el.style.color = 'var(--success)';
+  }
+}
+</script>
+{% endblock %}

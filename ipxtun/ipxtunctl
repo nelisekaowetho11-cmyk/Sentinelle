@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# ipxtunctl - manage ipxtun tunnels as systemd services.
+#
+#   ipxtunctl list
+#   ipxtunctl enable  <name>    create the unit and start at boot
+#   ipxtunctl start   <name>
+#   ipxtunctl stop    <name>
+#   ipxtunctl restart <name>
+#   ipxtunctl status  [name]
+#   ipxtunctl logs    <name>
+#   ipxtunctl stats   <name>
+#   ipxtunctl check   <name>
+#   ipxtunctl remove  <name>
+#   ipxtunctl newpsk
+#
+# <name> is the config basename without .toml, e.g. iran_bip.
+set -euo pipefail
+
+CONFDIR="${CONFDIR:-/etc/ipxtun}"
+UNITDIR=/etc/systemd/system
+BIN="${BIN:-/usr/local/bin/ipxtun}"
+
+red()   { printf '\033[31m%s\033[0m\n' "$*"; }
+green() { printf '\033[32m%s\033[0m\n' "$*"; }
+blue()  { printf '\033[36m%s\033[0m\n' "$*"; }
+dim()   { printf '\033[2m%s\033[0m\n' "$*"; }
+
+need_root() { [[ $EUID -eq 0 ]] || { red "run as root"; exit 1; }; }
+
+conf_for() {
+    local n="$1"
+    local p="$CONFDIR/${n}.toml"
+    [[ -f "$p" ]] || { red "no such config: $p"; exit 1; }
+    printf '%s' "$p"
+}
+
+unit_for() { printf 'ipxtun@%s.service' "$1"; }
+
+write_template() {
+    # One templated unit serves every tunnel.
+    cat > "$UNITDIR/ipxtun@.service" <<EOF
+[Unit]
+Description=ipxtun tunnel (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=$BIN -c $CONFDIR/%i.toml -check
+ExecStart=$BIN -c $CONFDIR/%i.toml
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+LimitMEMLOCK=infinity
+TasksMax=infinity
+# The tunnel needs raw sockets and TUN, but nothing else.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectControlGroups=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+}
+
+health_port_of() {
+    awk -F= '/^[[:space:]]*health_port/ {gsub(/[^0-9]/,"",$2); print $2; exit}' "$1"
+}
+local_ip_of() {
+    awk -F'"' '/^[[:space:]]*local_addr/ {split($2,a,"/"); print a[1]; exit}' "$1"
+}
+
+cmd_list() {
+    shopt -s nullglob
+    local found=0
+    printf '%-22s %-10s %-9s %s\n' NAME STATE PEER CONFIG
+    for f in "$CONFDIR"/*.toml; do
+        found=1
+        local n; n="$(basename "$f" .toml)"
+        local state peer="-"
+        state=$(systemctl is-active "$(unit_for "$n")" 2>/dev/null || true)
+        [[ -z "$state" ]] && state=absent
+
+        local hp ip
+        hp="$(health_port_of "$f")"; ip="$(local_ip_of "$f")"
+        if [[ -n "$hp" && -n "$ip" ]] && command -v curl >/dev/null; then
+            peer=$(curl -s --max-time 1 "http://$ip:$hp/health" 2>/dev/null \
+                   | grep -o '"status":"[a-z]*"' | cut -d'"' -f4 || true)
+            [[ -z "$peer" ]] && peer="-"
+        fi
+
+        case "$state" in
+            active) printf '\033[32m%-22s %-10s\033[0m %-9s %s\n' "$n" "$state" "$peer" "$f" ;;
+            absent) printf '\033[2m%-22s %-10s\033[0m %-9s %s\n' "$n" "$state" "$peer" "$f" ;;
+            *)      printf '\033[31m%-22s %-10s\033[0m %-9s %s\n' "$n" "$state" "$peer" "$f" ;;
+        esac
+    done
+    [[ $found -eq 1 ]] || dim "no configs in $CONFDIR"
+}
+
+cmd_enable() {
+    need_root
+    local n="$1"; local cfg; cfg="$(conf_for "$n")"
+    "$BIN" -c "$cfg" -check || { red "config is invalid, refusing to enable"; exit 1; }
+    write_template
+    systemctl enable --now "$(unit_for "$n")"
+    green "enabled $(unit_for "$n")"
+    sleep 1
+    systemctl --no-pager --lines=10 status "$(unit_for "$n")" || true
+}
+
+cmd_remove() {
+    need_root
+    local n="$1"
+    local u; u="$(unit_for "$n")"
+    systemctl disable --now "$u" 2>/dev/null || true
+    green "stopped and disabled $u"
+    read -r -p "also delete $CONFDIR/${n}.toml? [y/N] " a
+    if [[ "${a:-n}" =~ ^[Yy]$ ]]; then
+        rm -f "$CONFDIR/${n}.toml"
+        green "deleted config"
+    else
+        dim "config kept"
+    fi
+}
+
+cmd_stats() {
+    local n="$1"; local cfg; cfg="$(conf_for "$n")"
+    local hp ip
+    hp="$(health_port_of "$cfg")"; ip="$(local_ip_of "$cfg")"
+    [[ -n "$hp" && -n "$ip" ]] || { red "this config has no health_port"; exit 1; }
+    if command -v python3 >/dev/null; then
+        curl -s "http://$ip:$hp/stats" | python3 -m json.tool
+    else
+        curl -s "http://$ip:$hp/stats"; echo
+    fi
+}
+
+usage() {
+    # Print the header comment block, stopping at the first line of real code.
+    awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"
+}
+
+[[ $# -ge 1 ]] || { usage; exit 0; }
+cmd="$1"; shift || true
+
+case "$cmd" in
+    list|ls)   cmd_list ;;
+    enable)    [[ $# -eq 1 ]] || { red "usage: ipxtunctl enable <name>"; exit 2; }; cmd_enable "$1" ;;
+    start)     need_root; systemctl start   "$(unit_for "$1")"; green "started" ;;
+    stop)      need_root; systemctl stop    "$(unit_for "$1")"; green "stopped" ;;
+    restart)   need_root; systemctl restart "$(unit_for "$1")"; green "restarted" ;;
+    status)    if [[ $# -eq 1 ]]; then systemctl --no-pager status "$(unit_for "$1")"; else cmd_list; fi ;;
+    logs)      journalctl -u "$(unit_for "$1")" -f -o cat ;;
+    stats)     cmd_stats "$1" ;;
+    check)     "$BIN" -c "$(conf_for "$1")" -check ;;
+    remove|rm) cmd_remove "$1" ;;
+    newpsk)    "$BIN" -genpsk ;;
+    -h|--help|help) usage ;;
+    *)         red "unknown command: $cmd"; usage; exit 2 ;;
+esac

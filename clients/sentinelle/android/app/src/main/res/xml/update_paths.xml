@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Where the FileProvider is allowed to hand out read grants.
+
+  Downloads land in `updates/` under the app's private files directory — the
+  same place path_provider calls the application support directory — so nothing
+  outside this app can see a half-written APK, and no storage permission is
+  needed to write one.
+-->
+<paths>
+    <files-path name="updates" path="updates/" />
+    <cache-path name="update-cache" path="updates/" />
+</paths>

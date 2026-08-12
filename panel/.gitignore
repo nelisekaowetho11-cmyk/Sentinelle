@@ -1,0 +1,15 @@
+# Runtime downloads. The panel fetches Xray and the tunnel binaries from GitHub
+# on first start, so they are not part of the source.
+bin/
+binaries/
+
+# Generated at runtime from the database.
+generated-config.json
+generated-users.json
+xray-config.json
+
+# The Flask session key, written on first run.
+.secret_key
+
+# The database lives here.
+instance/

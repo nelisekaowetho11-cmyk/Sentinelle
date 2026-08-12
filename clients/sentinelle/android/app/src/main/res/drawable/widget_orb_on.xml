@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Connected: the accent ring the rest of the app uses for "protected". -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <gradient
+        android:type="radial"
+        android:gradientRadius="21dp"
+        android:startColor="@color/veil_accent"
+        android:endColor="@color/veil_accent_deep" />
+    <stroke android:width="2dp" android:color="@color/veil_accent" />
+</shape>

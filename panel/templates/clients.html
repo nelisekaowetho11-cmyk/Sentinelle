@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Clients — {{ inbound.name }}{% endblock %}
+{% block page_title %}Clients{% endblock %}
+
+{% block content %}
+<!-- Inbound info -->
+<div class="info-banner">
+  <div class="info-banner-left">
+    <span class="badge badge-proto-{{ inbound.protocol }}">{{ inbound.protocol | upper }}</span>
+    <span class="badge badge-outline">{{ inbound.transport | upper }}</span>
+    <strong>{{ inbound.name }}</strong>
+    <code class="port-code">:{{ inbound.port }}</code>
+  </div>
+  <a href="{{ url_for('inbounds') }}" class="btn btn-sm btn-secondary">
+    <i data-feather="arrow-left"></i> Inbounds
+  </a>
+</div>
+
+<!-- Add client -->
+<div class="card" style="margin-bottom:1.5rem">
+  <div class="card-header">
+    <h2 class="card-title"><i data-feather="user-plus"></i> Add Client</h2>
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('add_client', id=inbound.id) }}" class="inline-form">
+      <div class="field" style="flex:1">
+        <input type="text" name="name" placeholder="Client name (e.g. iPhone, Laptop)" required />
+      </div>
+      <button type="submit" class="btn btn-primary">
+        <i data-feather="plus"></i> Add
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Clients table -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title"><i data-feather="users"></i> Clients ({{ inbound.clients | length }})</h2>
+  </div>
+  <div class="card-body p-0">
+    {% if inbound.clients %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>UUID</th>
+          <th>Created</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in inbound.clients %}
+        <tr>
+          <td><strong>{{ c.name }}</strong></td>
+          <td>
+            <div class="uuid-cell">
+              <code class="uuid-text" id="uuid-{{ c.id }}">{{ c.uuid }}</code>
+              <button class="btn-icon-sm" onclick="copyText('{{ c.uuid }}')" title="Copy UUID">
+                <i data-feather="copy"></i>
+              </button>
+            </div>
+          </td>
+          <td class="muted">{{ c.created_at.strftime('%Y-%m-%d') }}</td>
+          <td>
+            <label class="toggle">
+              <input type="checkbox" {% if c.enabled %}checked{% endif %}
+                     onchange="toggleClient({{ c.id }}, this)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </td>
+          <td>
+            <div class="action-row">
+              <button class="btn btn-sm btn-secondary" onclick="getLink({{ c.id }}, '{{ c.name }}')" title="Get connection link">
+                <i data-feather="link"></i> Link
+              </button>
+              <button class="btn btn-sm btn-danger" title="Delete"
+                      onclick="confirmDelete('{{ url_for('delete_client', id=c.id) }}', '{{ c.name }}')">
+                <i data-feather="trash-2"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <i data-feather="users"></i>
+      <p>No clients yet. Add one above.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Link modal -->
+<div class="modal-overlay" id="link-modal" style="display:none">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h3><i data-feather="link"></i> Connection Link</h3>
+      <button class="btn-icon" onclick="document.getElementById('link-modal').style.display='none'">
+        <i data-feather="x"></i>
+      </button>
+    </div>
+    <p class="modal-sub" id="link-client-name"></p>
+    <div class="link-box">
+      <code id="link-text" class="link-code"></code>
+      <button class="btn btn-sm btn-secondary" onclick="copyText(document.getElementById('link-text').textContent)">
+        <i data-feather="copy"></i> Copy
+      </button>
+    </div>
+    <div id="qr-wrap" style="text-align:center;margin-top:1rem"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="document.getElementById('link-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal-overlay" id="del-modal" style="display:none">
+  <div class="modal">
+    <div class="modal-icon"><i data-feather="alert-triangle"></i></div>
+    <h3>Delete Client</h3>
+    <p>Delete <strong id="del-name"></strong>? This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="document.getElementById('del-modal').style.display='none'">Cancel</button>
+      <form id="del-form" method="POST" style="display:inline">
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function toggleClient(id, el) {
+  const res  = await fetch(`/clients/${id}/toggle`, { method: 'POST' });
+  const data = await res.json();
+  el.checked = data.enabled;
+  showToast('success', data.enabled ? 'Client enabled' : 'Client disabled');
+}
+
+async function getLink(id, name) {
+  const res  = await fetch(`/clients/${id}/link`);
+  const data = await res.json();
+  document.getElementById('link-client-name').textContent = name;
+  document.getElementById('link-text').textContent = data.link;
+  document.getElementById('qr-wrap').innerHTML = '';
+  document.getElementById('link-modal').style.display = 'flex';
+  feather.replace();
+
+  // QR code via free API
+  if (data.link) {
+    const encoded = encodeURIComponent(data.link);
+    const img = document.createElement('img');
+    img.src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encoded}`;
+    img.style = 'border-radius:8px;border:4px solid var(--border)';
+    document.getElementById('qr-wrap').appendChild(img);
+  }
+}
+
+function confirmDelete(url, name) {
+  document.getElementById('del-name').textContent = name;
+  document.getElementById('del-form').action = url;
+  document.getElementById('del-modal').style.display = 'flex';
+  feather.replace();
+}
+
+document.querySelectorAll('.modal-overlay').forEach(el => {
+  el.addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
+  });
+});
+</script>
+{% endblock %}

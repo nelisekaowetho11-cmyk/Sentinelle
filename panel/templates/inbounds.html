@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Inbounds — Xray Panel{% endblock %}
+{% block page_title %}Inbounds{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title"><i data-feather="layers"></i> All Inbounds</h2>
+    <a href="{{ url_for('add_inbound') }}" class="btn btn-primary">
+      <i data-feather="plus"></i> Add Inbound
+    </a>
+  </div>
+  <div class="card-body p-0">
+    {% if inbounds %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Protocol</th>
+          <th>Transport</th>
+          <th>Port</th>
+          <th>Clients</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ib in inbounds %}
+        <tr id="row-{{ ib.id }}">
+          <td><strong>{{ ib.name }}</strong></td>
+          <td><span class="badge badge-proto-{{ ib.protocol }}">{{ ib.protocol | upper }}</span></td>
+          <td><span class="badge badge-outline">{{ ib.transport | upper }}</span></td>
+          <td><code>{{ ib.port }}</code></td>
+          <td>
+            <a href="{{ url_for('clients', id=ib.id) }}" class="link">
+              {{ ib.clients | length }} client{% if ib.clients | length != 1 %}s{% endif %}
+            </a>
+          </td>
+          <td>
+            <label class="toggle" title="Enable / Disable">
+              <input type="checkbox" {% if ib.enabled %}checked{% endif %}
+                     onchange="toggleInbound({{ ib.id }}, this)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </td>
+          <td>
+            <div class="action-row">
+              <a href="{{ url_for('clients', id=ib.id) }}" class="btn btn-sm btn-secondary" title="Clients">
+                <i data-feather="users"></i>
+              </a>
+              <a href="{{ url_for('edit_inbound', id=ib.id) }}" class="btn btn-sm btn-secondary" title="Edit">
+                <i data-feather="edit-2"></i>
+              </a>
+              <button class="btn btn-sm btn-danger" title="Delete"
+                      onclick="confirmDelete('{{ url_for('delete_inbound', id=ib.id) }}', '{{ ib.name }}')">
+                <i data-feather="trash-2"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <i data-feather="layers"></i>
+      <p>No inbounds configured yet.</p>
+      <a href="{{ url_for('add_inbound') }}" class="btn btn-primary">
+        <i data-feather="plus"></i> Add your first inbound
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Delete confirm modal -->
+<div class="modal-overlay" id="modal" style="display:none">
+  <div class="modal">
+    <div class="modal-icon"><i data-feather="alert-triangle"></i></div>
+    <h3>Delete Inbound</h3>
+    <p>Are you sure you want to delete <strong id="modal-name"></strong>?<br>
+    All clients will be removed too.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <form id="modal-form" method="POST" style="display:inline">
+        <button type="submit" class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function toggleInbound(id, el) {
+  const res  = await fetch(`/inbounds/${id}/toggle`, { method: 'POST' });
+  const data = await res.json();
+  el.checked = data.enabled;
+  showToast('success', data.enabled ? 'Inbound enabled' : 'Inbound disabled');
+}
+
+function confirmDelete(url, name) {
+  document.getElementById('modal-name').textContent = name;
+  document.getElementById('modal-form').action = url;
+  document.getElementById('modal').style.display = 'flex';
+  feather.replace();
+}
+
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+}
+
+document.getElementById('modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Xray Panel{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon icon-blue"><i data-feather="layers"></i></div>
+    <div class="stat-body">
+      <div class="stat-value">{{ active_inbounds }}<span class="stat-total">/{{ inbound_count }}</span></div>
+      <div class="stat-label">Active Inbounds</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon icon-purple"><i data-feather="users"></i></div>
+    <div class="stat-body">
+      <div class="stat-value">{{ active_clients }}<span class="stat-total">/{{ client_count }}</span></div>
+      <div class="stat-label">Active Clients</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon {% if xray_status == 'running' %}icon-green{% else %}icon-red{% endif %}">
+      <i data-feather="{% if xray_status == 'running' %}zap{% else %}zap-off{% endif %}"></i>
+    </div>
+    <div class="stat-body">
+      <div class="stat-value">
+        <span class="badge {% if xray_status == 'running' %}badge-success{% else %}badge-danger{% endif %}">
+          {{ xray_status | capitalize }}
+        </span>
+      </div>
+      <div class="stat-label">Xray Core {% if xray_pid %}(PID {{ xray_pid }}){% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Xray control -->
+<div class="card" style="margin-bottom:1.5rem">
+  <div class="card-header">
+    <h2 class="card-title"><i data-feather="cpu"></i> Xray Core Control</h2>
+  </div>
+  <div class="card-body">
+    <div class="xray-controls">
+      <button class="btn btn-success" id="btn-start" onclick="xrayAction('start')">
+        <i data-feather="play"></i> Start
+      </button>
+      <button class="btn btn-danger" id="btn-stop" onclick="xrayAction('stop')">
+        <i data-feather="square"></i> Stop
+      </button>
+      <button class="btn btn-secondary" id="btn-restart" onclick="xrayAction('restart')">
+        <i data-feather="refresh-cw"></i> Restart
+      </button>
+      <a href="{{ url_for('api_config_download') }}" class="btn btn-secondary">
+        <i data-feather="download"></i> Download Config
+      </a>
+      <div class="xray-status-dot" id="status-indicator">
+        <span class="dot {% if xray_status == 'running' %}dot-green{% else %}dot-red{% endif %}" id="status-dot"></span>
+        <span id="status-text">{{ xray_status | capitalize }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent inbounds -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title"><i data-feather="list"></i> Recent Inbounds</h2>
+    <a href="{{ url_for('inbounds') }}" class="btn btn-sm btn-secondary">View All</a>
+  </div>
+  <div class="card-body p-0">
+    {% if recent_inbounds %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Protocol</th>
+          <th>Transport</th>
+          <th>Port</th>
+          <th>Clients</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ib in recent_inbounds %}
+        <tr>
+          <td><strong>{{ ib.name }}</strong></td>
+          <td><span class="badge badge-proto-{{ ib.protocol }}">{{ ib.protocol | upper }}</span></td>
+          <td><span class="badge badge-outline">{{ ib.transport | upper }}</span></td>
+          <td><code>{{ ib.port }}</code></td>
+          <td>{{ ib.clients | length }}</td>
+          <td>
+            <span class="badge {% if ib.enabled %}badge-success{% else %}badge-danger{% endif %}">
+              {% if ib.enabled %}Active{% else %}Disabled{% endif %}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <i data-feather="inbox"></i>
+      <p>No inbounds yet. <a href="{{ url_for('add_inbound') }}">Create one</a></p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function xrayAction(action) {
+  const res  = await fetch(`/api/xray/${action}`, { method: 'POST' });
+  const data = await res.json();
+  showToast(data.ok ? 'success' : 'error', data.message);
+  setTimeout(() => {
+    fetch('/api/xray/status').then(r => r.json()).then(d => {
+      const dot  = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      dot.className  = 'dot ' + (d.status === 'running' ? 'dot-green' : 'dot-red');
+      text.textContent = d.status.charAt(0).toUpperCase() + d.status.slice(1);
+    });
+  }, 800);
+}
+</script>
+{% endblock %}

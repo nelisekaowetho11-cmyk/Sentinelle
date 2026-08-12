@@ -1,0 +1,41 @@
+# KHAREJ side (client) - bare-IP tunnel
+# Peer of iran_bip.toml. psk, ip_proto and mtu must match that file.
+
+[transport]
+type = "tun"
+heartbeat_interval = 10
+heartbeat_timeout = 25
+
+[tun]
+encapsulation = "ipx"
+name = "ipx-bip"
+local_addr = "10.30.20.2/24"
+remote_addr = "10.30.20.1/24"
+health_port = 21235
+mtu = 1320
+
+[ipx]
+mode = "client"
+profile = "bip"
+listen_ip = "198.51.100.10"
+dst_ip = "203.0.113.20"
+interface = "eth0"
+ip_proto = 253
+
+[security]
+enable_encryption = true
+algorithm = "aes-256-gcm"
+psk = "REPLACE-ME-run-openssl-rand-base64-32"
+kdf_iterations = 100000
+padding = 0
+
+[tuning]
+auto_tuning = true
+tuning_profile = "balanced"
+workers = 0
+channel_size = 4096
+so_sndbuf = 0
+so_rcvbuf = 0
+
+[logging]
+log_level = "info"

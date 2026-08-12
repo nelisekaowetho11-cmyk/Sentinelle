@@ -1,0 +1,19 @@
+# Release signing. `key.properties` holds the keystore password in plain text.
+android/key.properties
+android/*.jks
+android/*.keystore
+
+# Flutter / Dart
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/flutter/ephemeral/
+
+# Gradle
+android/.gradle/
+android/local.properties
+
+# The cores are downloaded on first run, not committed.
+**/sing-box.exe
+**/xray.exe

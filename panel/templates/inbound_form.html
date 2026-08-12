@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}{% if inbound %}Edit{% else %}Add{% endif %} Inbound — Xray Panel{% endblock %}
+{% block page_title %}{% if inbound %}Edit Inbound{% else %}Add Inbound{% endif %}{% endblock %}
+
+{% block content %}
+<div class="card form-card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <i data-feather="{% if inbound %}edit-2{% else %}plus-circle{% endif %}"></i>
+      {% if inbound %}Edit "{{ inbound.name }}"{% else %}New Inbound{% endif %}
+    </h2>
+    <a href="{{ url_for('inbounds') }}" class="btn btn-secondary">
+      <i data-feather="arrow-left"></i> Back
+    </a>
+  </div>
+  <div class="card-body">
+    <form method="POST" id="inbound-form">
+
+      <!-- Basic -->
+      <div class="form-section">
+        <h3 class="section-title">Basic Settings</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" placeholder="e.g. My VLESS Reality"
+                   value="{{ inbound.name if inbound else '' }}" required />
+          </div>
+          <div class="field">
+            <label for="port">Port</label>
+            <div class="input-wrap">
+              <input type="number" id="port" name="port" placeholder="e.g. 34489" min="1" max="65535"
+                     value="{{ inbound.port if inbound else '' }}" required />
+              <button type="button" class="input-action" onclick="randomPort()" title="Random port">
+                <i data-feather="shuffle"></i>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="protocol">Protocol</label>
+            <select id="protocol" name="protocol" onchange="updateForm()">
+              {% for p in ['vless','vmess','trojan','shadowsocks'] %}
+              <option value="{{ p }}" {% if inbound and inbound.protocol == p %}selected{% endif %}>
+                {{ p | upper }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="transport">Transport</label>
+            <select id="transport" name="transport" onchange="updateForm()">
+              {% for t in ['tcp','ws','grpc','reality'] %}
+              <option value="{{ t }}" {% if inbound and inbound.transport == t %}selected{% endif %}>
+                {{ t | upper }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reality settings -->
+      <div class="form-section" id="section-reality" style="display:none">
+        <h3 class="section-title">
+          <i data-feather="shield"></i> Reality Settings
+          <button type="button" class="btn btn-sm btn-secondary" onclick="generateKeys()" id="btn-genkeys">
+            <i data-feather="key"></i> Generate Keys
+          </button>
+        </h3>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="private_key">Private Key</label>
+            <input type="text" id="private_key" name="private_key"
+                   placeholder="Server private key (keep secret)"
+                   value="{{ settings.get('private_key','') if settings else '' }}" />
+          </div>
+          <div class="field field-full">
+            <label for="public_key">Public Key <small>(used in client link)</small></label>
+            <input type="text" id="public_key" name="public_key"
+                   placeholder="Client public key"
+                   value="{{ settings.get('public_key','') if settings else '' }}" />
+          </div>
+          <div class="field">
+            <label for="sni">Server Name (SNI)</label>
+            <input type="text" id="sni" name="sni"
+                   placeholder="www.cloudflare.com"
+                   value="{{ settings.get('sni','www.cloudflare.com') if settings else 'www.cloudflare.com' }}" />
+          </div>
+          <div class="field">
+            <label for="dest">Destination</label>
+            <input type="text" id="dest" name="dest"
+                   placeholder="www.cloudflare.com:443"
+                   value="{{ settings.get('dest','www.cloudflare.com:443') if settings else 'www.cloudflare.com:443' }}" />
+          </div>
+          <div class="field">
+            <label for="short_id">Short ID</label>
+            <div class="input-wrap">
+              <input type="text" id="short_id" name="short_id"
+                     placeholder="e.g. e648da1f"
+                     value="{{ settings.get('short_id','') if settings else '' }}" />
+              <button type="button" class="input-action" onclick="genShortId()" title="Generate">
+                <i data-feather="refresh-cw"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WebSocket settings -->
+      <div class="form-section" id="section-ws" style="display:none">
+        <h3 class="section-title"><i data-feather="globe"></i> WebSocket Settings</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label for="ws_path">Path</label>
+            <input type="text" id="ws_path" name="ws_path" placeholder="/"
+                   value="{{ settings.get('ws_path','/') if settings else '/' }}" />
+          </div>
+          <div class="field">
+            <label for="ws_host">Host Header</label>
+            <input type="text" id="ws_host" name="ws_host" placeholder="example.com"
+                   value="{{ settings.get('ws_host','') if settings else '' }}" />
+          </div>
+          <div class="field">
+            <label>TLS</label>
+            <label class="toggle">
+              <input type="checkbox" name="tls" id="ws_tls"
+                     {% if settings and settings.get('tls') %}checked{% endif %}
+                     onchange="toggleTLSFields()" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div id="tls-fields" style="display:none">
+          <div class="form-grid">
+            <div class="field">
+              <label for="cert_file">Certificate File Path</label>
+              <input type="text" id="cert_file" name="cert_file" placeholder="/etc/ssl/cert.pem"
+                     value="{{ settings.get('cert_file','') if settings else '' }}" />
+            </div>
+            <div class="field">
+              <label for="key_file">Key File Path</label>
+              <input type="text" id="key_file" name="key_file" placeholder="/etc/ssl/key.pem"
+                     value="{{ settings.get('key_file','') if settings else '' }}" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- gRPC settings -->
+      <div class="form-section" id="section-grpc" style="display:none">
+        <h3 class="section-title"><i data-feather="zap"></i> gRPC Settings</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label for="grpc_service">Service Name</label>
+            <input type="text" id="grpc_service" name="grpc_service" placeholder="xray"
+                   value="{{ settings.get('grpc_service','xray') if settings else 'xray' }}" />
+          </div>
+          <div class="field">
+            <label>TLS</label>
+            <label class="toggle">
+              <input type="checkbox" name="tls" id="grpc_tls"
+                     {% if settings and settings.get('tls') %}checked{% endif %}
+                     onchange="toggleTLSFields()" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shadowsocks settings -->
+      <div class="form-section" id="section-ss" style="display:none">
+        <h3 class="section-title"><i data-feather="lock"></i> Shadowsocks Settings</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label for="method">Encryption Method</label>
+            <select id="method" name="method">
+              {% for m in ['chacha20-ietf-poly1305','aes-256-gcm','aes-128-gcm','2022-blake3-aes-256-gcm'] %}
+              <option value="{{ m }}" {% if settings and settings.get('method') == m %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="ss_password">Password</label>
+            <div class="input-wrap">
+              <input type="text" id="ss_password" name="ss_password"
+                     placeholder="Enter password"
+                     value="{{ settings.get('password','') if settings else '' }}" />
+              <button type="button" class="input-action" onclick="genSSPass()" title="Generate">
+                <i data-feather="refresh-cw"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <a href="{{ url_for('inbounds') }}" class="btn btn-secondary">Cancel</a>
+        <button type="submit" class="btn btn-primary">
+          <i data-feather="save"></i>
+          {% if inbound %}Save Changes{% else %}Create Inbound{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateForm() {
+  const proto     = document.getElementById('protocol').value;
+  const transport = document.getElementById('transport').value;
+
+  document.getElementById('section-reality').style.display = transport === 'reality' ? '' : 'none';
+  document.getElementById('section-ws').style.display      = transport === 'ws'      ? '' : 'none';
+  document.getElementById('section-grpc').style.display    = transport === 'grpc'    ? '' : 'none';
+  document.getElementById('section-ss').style.display      = proto     === 'shadowsocks' ? '' : 'none';
+
+  // Reality only works with VLESS
+  if (transport === 'reality') {
+    document.getElementById('protocol').value = 'vless';
+  }
+  feather.replace();
+}
+
+function toggleTLSFields() {
+  const ws   = document.getElementById('ws_tls');
+  const grpc = document.getElementById('grpc_tls');
+  const show = (ws && ws.checked) || (grpc && grpc.checked);
+  const el   = document.getElementById('tls-fields');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
+async function generateKeys() {
+  const btn = document.getElementById('btn-genkeys');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-feather="loader"></i> Generating…';
+  feather.replace();
+  try {
+    const res  = await fetch('/api/generate-keys', { method: 'POST' });
+    const data = await res.json();
+    if (data.error) { showToast('error', data.error); return; }
+    document.getElementById('private_key').value = data.private_key;
+    document.getElementById('public_key').value  = data.public_key;
+    showToast('success', 'Keys generated');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-feather="key"></i> Generate Keys';
+    feather.replace();
+  }
+}
+
+function genShortId() {
+  const hex = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map(b => b.toString(16).padStart(2,'0')).join('').slice(0,8);
+  document.getElementById('short_id').value = hex;
+}
+
+function genSSPass() {
+  const arr = crypto.getRandomValues(new Uint8Array(24));
+  document.getElementById('ss_password').value = btoa(String.fromCharCode(...arr)).slice(0,24);
+}
+
+async function randomPort() {
+  const port = Math.floor(Math.random() * 55535) + 10000;
+  document.getElementById('port').value = port;
+}
+
+// Init on load
+updateForm();
+toggleTLSFields();
+</script>
+{% endblock %}

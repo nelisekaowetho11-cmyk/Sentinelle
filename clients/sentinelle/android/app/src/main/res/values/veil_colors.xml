@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The widget is drawn by the launcher from RemoteViews, so it cannot read the
+  Flutter theme. These mirror lib/theme.dart's VeilColors by hand — keep them in
+  step if the palette moves.
+-->
+<resources>
+    <color name="veil_surface">#FF11151C</color>
+    <color name="veil_border">#FF232A35</color>
+    <color name="veil_text">#FFEBEEF2</color>
+    <color name="veil_muted">#FF7C828D</color>
+    <color name="veil_accent">#FF41D2B3</color>
+    <color name="veil_accent_deep">#FF00A488</color>
+    <color name="veil_orb_off">#FF1A212B</color>
+</resources>

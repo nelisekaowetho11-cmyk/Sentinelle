@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Xray Panel{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <script src="https://unpkg.com/feather-icons@4.29.0/dist/feather.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+        </svg>
+        <span>Xray Panel</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+          <i data-feather="home"></i><span>Dashboard</span>
+        </a>
+        <a href="{{ url_for('inbounds') }}" class="nav-item {% if 'inbound' in request.endpoint %}active{% endif %}">
+          <i data-feather="layers"></i><span>Inbounds</span>
+        </a>
+        <a href="{{ url_for('settings') }}" class="nav-item {% if request.endpoint == 'settings' %}active{% endif %}">
+          <i data-feather="settings"></i><span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <i data-feather="user"></i>
+          <span>{{ current_user.username }}</span>
+        </div>
+        <a href="{{ url_for('logout') }}" class="btn-icon" title="Logout">
+          <i data-feather="log-out"></i>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main area -->
+    <div class="main">
+      <header class="topbar">
+        <button class="btn-icon" id="sidebar-toggle" title="Toggle sidebar">
+          <i data-feather="menu"></i>
+        </button>
+        <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+        <div class="topbar-actions">
+          <button class="btn-icon" id="theme-toggle" title="Toggle theme">
+            <i data-feather="sun" id="icon-sun" style="display:none"></i>
+            <i data-feather="moon" id="icon-moon"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="toast-container">
+              {% for cat, msg in messages %}
+                <div class="toast toast-{{ cat }}">
+                  <i data-feather="{% if cat == 'success' %}check-circle{% elif cat == 'error' %}alert-circle{% else %}info{% endif %}"></i>
+                  <span>{{ msg }}</span>
+                  <button class="toast-close" onclick="this.parentElement.remove()">
+                    <i data-feather="x"></i>
+                  </button>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='main.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

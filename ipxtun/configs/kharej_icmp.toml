@@ -1,0 +1,42 @@
+# KHAREJ side (client) - ICMP tunnel
+# Peer of iran_icmp.toml.
+
+[transport]
+type = "tun"
+heartbeat_interval = 10
+heartbeat_timeout = 25
+
+[tun]
+encapsulation = "ipx"
+name = "ipx-icmp"
+local_addr = "10.30.10.2/24"
+remote_addr = "10.30.10.1/24"
+health_port = 21234
+mtu = 1320
+
+[ipx]
+mode = "client"
+profile = "icmp"
+listen_ip = "198.51.100.10"
+dst_ip = "203.0.113.10"
+interface = "eth0"
+icmp_type = 0
+icmp_code = 0
+
+[security]
+enable_encryption = true
+algorithm = "aes-256-gcm"
+psk = "REPLACE-ME-run-openssl-rand-base64-32"
+kdf_iterations = 100000
+padding = 0
+
+[tuning]
+auto_tuning = true
+tuning_profile = "balanced"
+workers = 0
+channel_size = 4096
+so_sndbuf = 0
+so_rcvbuf = 0
+
+[logging]
+log_level = "info"
