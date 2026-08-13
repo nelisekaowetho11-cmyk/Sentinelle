@@ -100,6 +100,31 @@ class MainActivity : FlutterActivity() {
                     "consumeUserStop" -> {
                         result.success(VpnToggle.consumeUserRequestedStop())
                     }
+                    // Is a tunnel up right now, started by whoever?
+                    //
+                    // The app's startup sweep exists to kill a core a crashed
+                    // run left behind, and it could not tell that apart from a
+                    // tunnel that is working — so opening the app from the
+                    // notification took the VPN down with it. Asking first is
+                    // what lets the sweep leave a live tunnel alone.
+                    "isCoreRunning" -> {
+                        VpnToggle.ensureStateWatcher(this)
+                        // Asked at startup, which is exactly when this process
+                        // may be new and the tunnel older than it.
+                        VpnToggle.syncConnectionMode(this)
+                        result.success(VpnToggle.isRunning())
+                    }
+                    // Connected *or* still coming up. A stop is a fire-and-
+                    // forget intent to a service in another process, so the
+                    // engine confirms the tunnel actually went down rather
+                    // than assuming the intent landed.
+                    "isTunnelActive" -> {
+                        VpnToggle.ensureStateWatcher(this)
+                        // A stop that has not taken is retried after this
+                        // answers, so the retry must be addressed correctly.
+                        VpnToggle.syncConnectionMode(this)
+                        result.success(VpnToggle.isActive())
+                    }
                     else -> result.notImplemented()
                 }
             }

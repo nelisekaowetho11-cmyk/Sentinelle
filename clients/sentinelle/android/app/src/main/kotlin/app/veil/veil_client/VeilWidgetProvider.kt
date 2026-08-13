@@ -36,8 +36,8 @@ class VeilWidgetProvider : AppWidgetProvider() {
             // What the user asked for until the core answers, then what the core
             // says. Reading the core alone drew the state being left behind: a
             // service takes a moment to start, and nothing repainted afterwards.
-            val on = VpnToggle.displayActive()
-            val busy = VpnToggle.isBusy()
+            val on = VpnToggle.displayActive(context)
+            val busy = VpnToggle.isBusy(context)
             // With nothing remembered the widget cannot start anything, and on
             // Android 10+ it cannot even open the app from here. Saying "tap to
             // connect" and then doing nothing is what made it look broken.
@@ -95,6 +95,9 @@ class VeilWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        // Whatever woke this receiver, the process may be brand new — start
+        // listening to the core before reading anything out of it.
+        VpnToggle.ensureStateWatcher(context)
         when (intent.action) {
             ACTION_TOGGLE -> {
                 if (!VpnToggle.toggle(context)) {

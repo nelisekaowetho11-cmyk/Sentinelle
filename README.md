@@ -1,5 +1,9 @@
 # Sentinelle
 
+[![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-9%2B-3ddc84.svg)](clients/sentinelle)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078d4.svg)](clients/sentinelle)
+
 A self-hosted VPN stack: a management panel, cross-platform clients, and a
 tunnel for getting traffic out of a filtered network.
 
@@ -134,3 +138,8 @@ The `flutter_v2ray` fork is not upstream. It repaints the ongoing notification
 with live throughput, and adds `setConnectionMode` so switching between proxy
 and tunnel modes stops the previous service first. Both changes are described
 in the client README.
+
+---
+
+<sub>Source: <https://github.com/miredaw/Sentinelle> ·
+Site: <https://sentinelle.mireda.app></sub>

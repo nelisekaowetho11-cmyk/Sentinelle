@@ -89,8 +89,8 @@ class VeilTileService : TileService() {
     }
 
     private fun refresh() = setTile(
-        active = VpnToggle.displayActive(),
-        busy = VpnToggle.isBusy(),
+        active = VpnToggle.displayActive(this),
+        busy = VpnToggle.isBusy(this),
     )
 
     private fun setTile(active: Boolean, busy: Boolean) {

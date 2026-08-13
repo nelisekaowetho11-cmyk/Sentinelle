@@ -22,6 +22,12 @@ import 'widgets/common.dart';
 bool get _isDesktop =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+/// True when the app opened into a tunnel that was already running.
+///
+/// Set before `runApp` because the check has to happen alongside the startup
+/// sweep, and read once by [AppState.bootstrap].
+bool adoptedTunnel = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Storage.init();
@@ -66,8 +72,15 @@ Future<void> main() async {
     if (Platform.isAndroid) {
       // Same guard as the desktop sweep above: a crash leaves the VpnService
       // running, and Android will happily keep tunnelling without us.
-      await AndroidVpnEngine.sweepOrphans();
+      //
+      // It answers whether a tunnel was already up, because on Android the
+      // core outlives the Flutter engine — opening the app from the ongoing
+      // notification lands in a process that is already tunnelling, and that
+      // one must be adopted rather than swept. See [AppState.bootstrap].
+      adoptedTunnel = await AndroidVpnEngine.sweepOrphans();
     }
+    // Phones start edge-to-edge; tablets are switched to full screen once the
+    // first frame can tell us how big the display is — see [_syncFullscreen].
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -90,7 +103,7 @@ class VeilApp extends StatefulWidget {
 
 class _VeilAppState extends State<VeilApp>
     with WindowListener, WidgetsBindingObserver {
-  final AppState _state = AppState();
+  final AppState _state = AppState(adoptedTunnel: adoptedTunnel);
   TrayService? _tray;
 
   bool _quitting = false;
@@ -156,7 +169,44 @@ class _VeilAppState extends State<VeilApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_state.refreshOnOpen());
+      // The system UI mode does not always survive a trip through the task
+      // switcher, a permission dialog or the VPN consent sheet, and a tablet
+      // that came back with its bars showing is the bug this fixes.
+      _reapplyFullscreen();
     }
+  }
+
+  /// True once the app has asked for full screen, so it can be asked for again.
+  bool? _fullscreen;
+
+  /// Tablets run full screen; phones stay edge-to-edge.
+  ///
+  /// On a phone the status and navigation bars are thin and the app is laid
+  /// out around them. A tablet in the wide layout is a different shape: the
+  /// sidebar and the page run the full height of the display, so the clock and
+  /// the navigation pill sit *on top of* the app's own chrome rather than
+  /// beside it. Giving the whole screen to the app is what the layout was
+  /// drawn for; the bars are still one swipe away, which is what
+  /// `immersiveSticky` means.
+  ///
+  /// 600dp on the shortest side is Android's own definition of a tablet, and
+  /// it is stable under rotation — unlike the 900dp width that picks the wide
+  /// layout, which a 10-inch tablet crosses only in landscape.
+  void _syncFullscreen(BuildContext context) {
+    if (_isDesktop || !Platform.isAndroid) return;
+    final view = View.of(context);
+    final size = view.physicalSize / view.devicePixelRatio;
+    final tablet = size.shortestSide >= 600;
+    if (_fullscreen == tablet) return;
+    _fullscreen = tablet;
+    SystemChrome.setEnabledSystemUIMode(
+      tablet ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
+  }
+
+  void _reapplyFullscreen() {
+    if (_fullscreen != true) return;
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   /// Repaints the whole app when the theme setting changes; every other state
@@ -256,6 +306,7 @@ class _VeilAppState extends State<VeilApp>
     // the palette straight off VeilColors rather than out of a Theme.
     VeilTheme.apply(brightness);
     _syncSystemChrome(brightness);
+    _syncFullscreen(context);
     // The tray's right-click menu is drawn by Windows, not by us, so it has to
     // be told separately which way the app has gone.
     if (_isDesktop) {

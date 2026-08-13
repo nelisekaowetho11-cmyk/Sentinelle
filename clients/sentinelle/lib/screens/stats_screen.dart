@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../models/models.dart';
+import '../models/sources.dart';
+import '../services/subscription_service.dart';
 import '../services/vpn/desktop_engine.dart';
 import '../services/vpn/vpn_engine.dart';
 import '../state/app_state.dart';
@@ -9,9 +12,20 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'shell.dart' show mobileTabBarClearance;
 
-class StatsScreen extends StatelessWidget {
+class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key, required this.state});
   final AppState state;
+
+  @override
+  State<StatsScreen> createState() => _StatsScreenState();
+}
+
+class _StatsScreenState extends State<StatsScreen> {
+  /// Which account's figures are on screen. Null until the user picks one, at
+  /// which point the first source is showing.
+  String? _sourceId;
+
+  AppState get state => widget.state;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +34,6 @@ class StatsScreen extends StatelessWidget {
     final down = formatSpeed(st.downloadSpeed);
     final up = formatSpeed(st.uploadSpeed);
     final server = state.activeServer ?? state.selectedServer;
-    final p = state.profile;
 
     return SafeArea(
       bottom: false,
@@ -135,32 +148,8 @@ class StatsScreen extends StatelessWidget {
               ],
             ),
 
-            // ── Account ────────────────────────────────────────────────────
-            if (p != null)
-              _GridSection(
-                title: 'Account',
-                tiles: [
-                  _Stat('Account', p.username, mono: true),
-                  _Stat('Plan status', p.status),
-                  _Stat(
-                      'Data used',
-                      p.unlimited
-                          ? '${p.trafficUsedGb.toStringAsFixed(2)} GB (unlimited)'
-                          : '${p.trafficUsedGb.toStringAsFixed(2)} / ${p.trafficLimitGb.toStringAsFixed(0)} GB',
-                      mono: true),
-                  _Stat('Expires', p.expires.isEmpty ? 'Never' : p.expires,
-                      mono: true),
-                  _Stat('Device limit',
-                      p.ipLimit == 0 ? 'Unlimited' : '${p.ipLimit}',
-                      mono: true),
-                  _Stat(
-                      'Speed limit',
-                      p.speedLimitKbps == 0
-                          ? 'Unlimited'
-                          : '${(p.speedLimitKbps / 1000).toStringAsFixed(1)} Mbps',
-                      mono: true),
-                ],
-              ),
+            // ── Accounts ───────────────────────────────────────────────────
+            ..._accountSection(),
 
             // ── Desktop core log ───────────────────────────────────────────
             if (!Platform.isAndroid && state.engine is DesktopVpnEngine) ...[
@@ -171,6 +160,67 @@ class StatsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // ── Accounts ───────────────────────────────────────────────────────────────
+
+  /// One button per account, and the figures for whichever is selected.
+  ///
+  /// The screen used to show a single account: whichever one happened to be
+  /// primary, with no hint that the others existed. Anyone signed into two
+  /// panels — which the app has supported since sources landed — could see the
+  /// quota of one of them and had no way at all to reach the rest.
+  ///
+  /// Subscriptions and imported configs are listed alongside the accounts
+  /// rather than in a section of their own. They are all "somewhere my
+  /// locations come from" to the person using the app, and a subscription
+  /// carries the same used/remaining figures an account does.
+  List<Widget> _accountSection() {
+    final sources = state.sources.sources;
+    if (sources.isEmpty) return const [];
+
+    // A source that was signed out from another screen must not leave the
+    // panel below showing figures from a source that is gone.
+    final selected = sources.firstWhere(
+      (s) => s.id == _sourceId,
+      orElse: () => sources.first,
+    );
+
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 2, 4, 8),
+        child: Row(
+          children: [
+            Text(sources.length == 1 ? 'ACCOUNT' : 'ACCOUNTS',
+                style: VeilText.label()),
+            const Spacer(),
+            if (sources.length > 1)
+              Text('${sources.length} sources',
+                  style: VeilText.ui(size: 10.5, color: VeilColors.muted)),
+          ],
+        ),
+      ),
+      // One tab per account. Kept even for a single source? No — a row of one
+      // button is furniture, and the heading above already names it.
+      if (sources.length > 1) ...[
+        _AccountTabs(
+          sources: sources,
+          selectedId: selected.id,
+          servers: (id) => state.sources.serversOf(id).length,
+          blocked: (id) => state.sources.blockedReasonOf(id) != null,
+          onSelect: (id) => setState(() => _sourceId = id),
+        ),
+        const SizedBox(height: 10),
+      ],
+      _AccountPanel(
+        source: selected,
+        profile: state.sources.profileOf(selected.id),
+        usage: state.sources.usageOf(selected.id),
+        blockedReason: state.sources.blockedReasonOf(selected.id),
+        locations: state.sources.serversOf(selected.id).length,
+      ),
+      const SizedBox(height: 12),
+    ];
   }
 
   static String _statusText(VpnState s) => switch (s) {
@@ -190,6 +240,332 @@ class StatsScreen extends StatelessWidget {
         ],
       );
 
+}
+
+/// The row of account buttons.
+///
+/// A horizontal strip rather than a wrapping row: the labels are panel
+/// hostnames and usernames, so a handful of accounts would otherwise push the
+/// figures below them off the bottom of a phone screen.
+class _AccountTabs extends StatelessWidget {
+  const _AccountTabs({
+    required this.sources,
+    required this.selectedId,
+    required this.servers,
+    required this.blocked,
+    required this.onSelect,
+  });
+
+  final List<LocationSource> sources;
+  final String selectedId;
+  final int Function(String sourceId) servers;
+  final bool Function(String sourceId) blocked;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 44,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          itemCount: sources.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            final s = sources[i];
+            final active = s.id == selectedId;
+            return _AccountTab(
+              label: s.displayLabel,
+              icon: switch (s.kind) {
+                SourceKind.account => Icons.account_circle_rounded,
+                SourceKind.subscription => Icons.cloud_sync_rounded,
+                SourceKind.manual => Icons.content_paste_rounded,
+              },
+              count: servers(s.id),
+              active: active,
+              // A source in trouble is worth spotting without opening it: a
+              // paused account and an unreachable subscription both look like
+              // "my locations went away" from the outside.
+              warn: blocked(s.id) || s.error != null || !s.enabled,
+              onTap: () => onSelect(s.id),
+            );
+          },
+        ),
+      );
+}
+
+class _AccountTab extends StatelessWidget {
+  const _AccountTab({
+    required this.label,
+    required this.icon,
+    required this.count,
+    required this.active,
+    required this.warn,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final int count;
+  final bool active;
+  final bool warn;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = active ? VeilColors.accent : VeilColors.text2;
+    return Material(
+      color: active
+          ? VeilColors.accent.withValues(alpha: 0.14)
+          : VeilColors.surface,
+      borderRadius: BorderRadius.circular(VeilRadius.pill),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(VeilRadius.pill),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          constraints: const BoxConstraints(maxWidth: 240),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(VeilRadius.pill),
+            border: Border.all(
+              color: active ? VeilColors.accent.withValues(alpha: 0.5) : VeilColors.border,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: colour),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: VeilText.ui(
+                    size: 12.5,
+                    weight: active ? 600 : 500,
+                    color: active ? VeilColors.text : VeilColors.text2,
+                  ),
+                ),
+              ),
+              if (warn) ...[
+                const SizedBox(width: 6),
+                Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: VeilColors.danger,
+                  ),
+                ),
+              ] else if (count > 0) ...[
+                const SizedBox(width: 7),
+                Text('$count',
+                    style: VeilText.mono(size: 10.5, color: VeilColors.muted)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Everything known about one account, subscription or import.
+class _AccountPanel extends StatelessWidget {
+  const _AccountPanel({
+    required this.source,
+    required this.profile,
+    required this.usage,
+    required this.blockedReason,
+    required this.locations,
+  });
+
+  final LocationSource source;
+  final Profile? profile;
+  final SubscriptionUsage? usage;
+  final String? blockedReason;
+  final int locations;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = profile;
+    final u = usage;
+
+    final double? pct = p != null
+        ? (p.unlimited ? null : p.trafficPct)
+        : (u != null && !u.unlimited ? u.usedPct : null);
+
+    return VeilCard(
+      radius: VeilRadius.xl,
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(source.displayLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: VeilText.display(size: 15, weight: 600)),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        source.kind.label,
+                        '$locations location${locations == 1 ? '' : 's'}',
+                        if (!source.enabled) 'disabled',
+                      ].join(' · '),
+                      style: VeilText.ui(size: 11, color: VeilColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              StatusPill(
+                label: _health,
+                color: _healthColour,
+              ),
+            ],
+          ),
+          if (pct != null) ...[
+            const SizedBox(height: 12),
+            QuotaBar(pct: pct, height: 4),
+          ],
+          if (blockedReason != null || source.error != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(11, 9, 11, 10),
+              decoration: BoxDecoration(
+                color: VeilColors.danger.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(VeilRadius.sm),
+                border: Border.all(
+                    color: VeilColors.danger.withValues(alpha: 0.35)),
+              ),
+              child: Text(blockedReason ?? source.error!,
+                  style: VeilText.ui(size: 11.5, color: VeilColors.text)),
+            ),
+          ],
+          const SizedBox(height: 12),
+          _GridSection(title: 'Details', tiles: _tiles()),
+        ],
+      ),
+    );
+  }
+
+  String get _health {
+    if (source.error != null) return 'Error';
+    if (blockedReason != null) return 'Blocked';
+    if (!source.enabled) return 'Disabled';
+    final p = profile;
+    if (p != null && !p.canConnect) return 'Inactive';
+    return 'Active';
+  }
+
+  Color get _healthColour => switch (_health) {
+        'Active' => VeilColors.accent,
+        'Disabled' => VeilColors.muted,
+        _ => VeilColors.danger,
+      };
+
+  List<_Stat> _tiles() {
+    final p = profile;
+    final u = usage;
+
+    if (p != null) {
+      return [
+        _Stat('Account', p.username, mono: true),
+        _Stat('Panel', _host(source.baseUrl), mono: true),
+        _Stat('Plan status', p.status),
+        _Stat(
+            'Data used',
+            p.unlimited
+                ? '${p.trafficUsedGb.toStringAsFixed(2)} GB (unlimited)'
+                : '${p.trafficUsedGb.toStringAsFixed(2)} / '
+                    '${p.trafficLimitGb.toStringAsFixed(0)} GB',
+            mono: true),
+        _Stat(
+            'Remaining',
+            p.unlimited
+                ? 'Unlimited'
+                : '${(p.trafficLeftGb ?? 0).toStringAsFixed(2)} GB',
+            mono: true),
+        _Stat('Expires', p.expires.isEmpty ? 'Never' : p.expires, mono: true),
+        if (p.daysLeft != null)
+          _Stat('Days left', '${p.daysLeft}', mono: true),
+        _Stat(
+            'Devices',
+            p.ipLimit == 0
+                ? (p.devicesInUse == null
+                    ? 'Unlimited'
+                    : '${p.devicesInUse} · unlimited')
+                : '${p.devicesInUse ?? '?'} / ${p.ipLimit}',
+            mono: true,
+            color: p.atDeviceLimit ? VeilColors.danger : null),
+        _Stat(
+            'Speed limit',
+            p.speedLimitKbps == 0
+                ? 'Unlimited'
+                : '${(p.speedLimitKbps / 1000).toStringAsFixed(1)} Mbps',
+            mono: true),
+        _Stat('Locations', '$locations', mono: true),
+        _Stat('Updated', _ago(source.lastRefresh), mono: true),
+      ];
+    }
+
+    if (u != null) {
+      return [
+        _Stat('Subscription', source.displayLabel),
+        _Stat('Host', _host(source.url), mono: true),
+        _Stat(
+            'Data used',
+            u.unlimited
+                ? '${formatBytes(u.usedBytes)} (unlimited)'
+                : '${formatBytes(u.usedBytes)} / ${formatBytes(u.totalBytes)}',
+            mono: true),
+        _Stat('Downloaded', formatBytes(u.downloadBytes), mono: true),
+        _Stat('Uploaded', formatBytes(u.uploadBytes), mono: true),
+        _Stat(
+            'Expires',
+            u.expiry == null
+                ? 'Never'
+                : u.expiry!.toIso8601String().split('T').first,
+            mono: true),
+        _Stat('Locations', '$locations', mono: true),
+        _Stat('Updated', _ago(source.lastRefresh), mono: true),
+      ];
+    }
+
+    // A subscription that has not answered yet, or pasted configs — which
+    // genuinely have nothing behind them but the list itself.
+    return [
+      _Stat('Kind', source.kind.label),
+      if (source.url.isNotEmpty) _Stat('Host', _host(source.url), mono: true),
+      if (source.baseUrl.isNotEmpty)
+        _Stat('Panel', _host(source.baseUrl), mono: true),
+      _Stat('Locations', '$locations', mono: true),
+      _Stat('Updated', _ago(source.lastRefresh), mono: true),
+    ];
+  }
+
+  static String _host(String raw) {
+    if (raw.isEmpty) return '—';
+    final u = Uri.tryParse(raw);
+    return (u == null || u.host.isEmpty) ? raw : u.host;
+  }
+
+  static String _ago(DateTime? t) {
+    if (t == null) return 'never';
+    final d = DateTime.now().difference(t);
+    if (d.inSeconds < 90) return 'just now';
+    if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+    if (d.inHours < 24) return '${d.inHours}h ago';
+    return '${d.inDays}d ago';
+  }
 }
 
 /// One label/value pair in the stats grid.

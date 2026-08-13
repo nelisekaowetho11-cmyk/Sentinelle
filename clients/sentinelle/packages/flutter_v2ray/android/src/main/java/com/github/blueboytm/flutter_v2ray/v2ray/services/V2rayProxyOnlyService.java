@@ -24,22 +24,35 @@ public class V2rayProxyOnlyService extends Service implements V2rayServicesListe
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Veil: Android hands a **null** intent to a service it recreated by
+        // itself, and upstream dereferenced it on the very next line. Combined
+        // with START_STICKY below that turned "the user pressed Disconnect"
+        // into a service the system felt entitled to bring back.
+        if (intent == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         AppConfigs.V2RAY_SERVICE_COMMANDS startCommand = (AppConfigs.V2RAY_SERVICE_COMMANDS) intent.getSerializableExtra("COMMAND");
+        if (startCommand == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.START_SERVICE)) {
             // Veil: see V2rayVPNService.
             AppConfigs.USER_REQUESTED_STOP = false;
             V2rayConfig v2rayConfig = (V2rayConfig) intent.getSerializableExtra("V2RAY_CONFIG");
             if (v2rayConfig == null) {
-                this.onDestroy();
+                // Veil: onDestroy() does not stop a service. See V2rayVPNService.
+                stopService();
+                return START_NOT_STICKY;
             }
             if (V2rayCoreManager.getInstance().isV2rayCoreRunning()) {
                 V2rayCoreManager.getInstance().stopCore();
             }
-            assert v2rayConfig != null;
             if (V2rayCoreManager.getInstance().startCore(v2rayConfig)) {
                 Log.e(V2rayProxyOnlyService.class.getSimpleName(), "onStartCommand success => v2ray core started.");
             } else {
-                this.onDestroy();
+                stopService();
             }
         } else if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE)) {
             // Veil: see V2rayVPNService — a STOP_SERVICE is always somebody
@@ -47,6 +60,7 @@ public class V2rayProxyOnlyService extends Service implements V2rayServicesListe
             AppConfigs.USER_REQUESTED_STOP = true;
             V2rayCoreManager.getInstance().stopCore();
             AppConfigs.V2RAY_CONFIG = null;
+            stopService();
         } else if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.MEASURE_DELAY)) {
             new Thread(() -> {
                 Intent sendB = new Intent("CONNECTED_V2RAY_SERVER_DELAY");
@@ -55,9 +69,16 @@ public class V2rayProxyOnlyService extends Service implements V2rayServicesListe
                 sendBroadcast(sendB);
             }, "MEASURE_CONNECTED_V2RAY_SERVER_DELAY").start();
         } else {
-            this.onDestroy();
+            stopService();
         }
-        return START_STICKY;
+        // Veil: START_NOT_STICKY, not START_STICKY.
+        //
+        // A tunnel must never come back without somebody asking for it. Sticky
+        // tells Android to recreate this service after the process goes away,
+        // which is how a deliberate disconnect could be followed seconds later
+        // by the VPN — and its notification — returning on their own. If the
+        // process dies the right outcome is that the tunnel stays down.
+        return START_NOT_STICKY;
     }
 
 

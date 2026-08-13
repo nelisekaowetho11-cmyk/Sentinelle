@@ -219,4 +219,59 @@ void main() {
     expect(find.text('Disconnected'), findsWidgets);
     state.dispose();
   });
+
+  // The screen used to show one account — whichever happened to be primary —
+  // with nothing to say that the others existed.
+  testWidgets('StatsScreen gives every account a tab', (tester) async {
+    tester.view.physicalSize = const Size(1100, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final state = populated();
+    state.seedSource(
+      id: 'acc_second',
+      label: 'Second panel',
+      profile: Profile.fromJson({
+        'id': 2,
+        'name': 'Second',
+        'username': 'pvb20002',
+        'email': '',
+        'status': 'active',
+        'can_connect': true,
+        'unlimited': true,
+        'traffic_limit_gb': 0.0,
+        'traffic_used_gb': 3.0,
+        'traffic_left_gb': null,
+        'traffic_pct': 0.0,
+        'expires': '',
+        'days_left': null,
+        'ip_limit': 0,
+        'speed_limit_kbps': 0,
+        'note': '',
+        'sub_url': '',
+        'owner': null,
+      }),
+      servers: [server(4, 'France · Paris', 'FR')],
+    );
+
+    await tester.pumpWidget(
+        host(StatsScreen(state: state), size: const Size(1100, 1200)));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull);
+
+    expect(find.text('ACCOUNTS'), findsOneWidget);
+    expect(find.text('Second panel'), findsWidgets);
+    // The first source is showing, so its username is the one on the tiles.
+    expect(find.text('pvb10001'), findsWidgets);
+    expect(find.text('pvb20002'), findsNothing);
+
+    // Tapping the second account's button swaps the figures below it.
+    await tester.tap(find.text('Second panel').first);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull);
+    expect(find.text('pvb20002'), findsWidgets);
+    expect(find.text('pvb10001'), findsNothing);
+
+    state.dispose();
+  });
 }

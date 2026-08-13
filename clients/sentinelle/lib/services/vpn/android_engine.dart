@@ -127,17 +127,42 @@ class AndroidVpnEngine implements VpnEngine {
   /// leaves the device tunnelling through a core this process knows nothing
   /// about — connected, unmanageable, and invisible in the app's own state.
   /// Stopping unconditionally is safe: with nothing running it is a no-op.
-  static Future<void> sweepOrphans() async {
+  /// Returns true when a tunnel was already up and has been left running.
+  ///
+  /// The sweep used to stop the core unconditionally, on the reasoning that
+  /// anything still running at startup was left behind by a crash. That is
+  /// wrong whenever the app is *cold-started while connected* — which happens
+  /// every time someone taps the ongoing notification, and which took the
+  /// tunnel down with it.
+  ///
+  /// A core that reports CONNECTED is not an orphan, it is a working tunnel;
+  /// the app adopts it instead. Only a core in some other state — starting,
+  /// half-dead, wedged — is swept.
+  static Future<bool> sweepOrphans() async {
     try {
+      if (await AndroidShortcuts.isCoreRunning()) return true;
+
       final v2ray = FlutterV2ray(onStatusChanged: (_) {});
       await v2ray.initializeV2Ray(
         notificationIconResourceType: 'mipmap',
         notificationIconResourceName: 'ic_launcher',
       );
       await v2ray.stopV2Ray();
+      return false;
     } catch (_) {
       // Never let a failed sweep stop the app from starting.
+      return false;
     }
+  }
+
+  /// Takes ownership of a tunnel that was already running when the app opened.
+  ///
+  /// Without this the engine would sit on `disconnected` while the phone was
+  /// plainly tunnelling — the state the sweep used to "fix" by killing it.
+  void adoptRunningTunnel() {
+    _starting = false;
+    _verifying = false;
+    _emitState(VpnState.connected);
   }
 
   @override
@@ -421,6 +446,7 @@ class AndroidVpnEngine implements VpnEngine {
     // Retires whatever attempt is in flight, so its verification cannot come
     // back later and overwrite this stop with a verdict nobody is waiting for.
     _generation++;
+    final generation = _generation;
     _emitState(VpnState.disconnecting);
     _starting = false;
     _verifying = false;
@@ -430,6 +456,35 @@ class AndroidVpnEngine implements VpnEngine {
     _stats = VpnStats.zero;
     if (!_statsCtrl.isClosed) _statsCtrl.add(_stats);
     _emitState(VpnState.disconnected);
+    // Unawaited: the user asked to stop and the UI should say so now. This is
+    // the check that it actually happened.
+    unawaited(_confirmStopped(generation));
+  }
+
+  /// Makes sure the tunnel really went down, and says so again if it did not.
+  ///
+  /// `stopV2Ray` is a one-way intent to a service in another process — the
+  /// plugin runs its core under `android:process=":RunSoLibV2RayDaemon"` — and
+  /// it returns as soon as the intent is posted, whatever becomes of it. When
+  /// the service came out of that with its TUN device still established,
+  /// Android went on showing an active VPN and routing the phone into a tunnel
+  /// the app had already forgotten, and the only way out was to connect and
+  /// disconnect a second time. The service-side teardown is unconditional now;
+  /// this is the belt to that pair of braces, and it costs nothing when the
+  /// first stop worked.
+  Future<void> _confirmStopped(int generation) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      // Somebody asked for a new tunnel in the meantime; this stop is history.
+      if (generation != _generation) return;
+      if (!await AndroidShortcuts.isTunnelActive()) return;
+      if (generation != _generation) return;
+      try {
+        await _v2ray.stopV2Ray();
+      } catch (_) {
+        // Nothing useful to do with a failure here — the next pass retries.
+      }
+    }
   }
 
   /// Last honest (direct, pre-tunnel) reading per server, keyed like

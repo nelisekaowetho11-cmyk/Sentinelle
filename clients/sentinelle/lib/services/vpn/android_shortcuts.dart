@@ -71,12 +71,51 @@ class AndroidShortcuts {
   /// and the widget appeared to toggle at random.
   ///
   /// Read-and-clear on the native side: one stop is only ever claimed once.
+  /// Fails **closed**: an unanswerable question counts as "the user asked".
+  ///
+  /// The two ways to be wrong are not equal. Reconnecting a tunnel somebody
+  /// deliberately switched off is the bug being fixed here and it is
+  /// infuriating; declining to auto-recover from a genuine drop costs one tap.
   static Future<bool> consumeUserStop() async {
     if (!supported) return false;
     try {
-      return await _channel.invokeMethod<bool>('consumeUserStop') ?? false;
+      return await _channel.invokeMethod<bool>('consumeUserStop') ?? true;
     } on PlatformException catch (e) {
-      debugPrint('user-stop check failed: $e');
+      debugPrint('user-stop check failed, assuming the user asked: $e');
+      return true;
+    } on MissingPluginException {
+      // The engine is not attached, so nobody is watching the UI either.
+      return true;
+    }
+  }
+
+  /// True when a tunnel is up right now, whoever started it.
+  ///
+  /// Answered natively because the core outlives the Flutter engine: the app
+  /// can be cold-started into a process that is already tunnelling.
+  static Future<bool> isCoreRunning() async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('isCoreRunning') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('core-state check failed: $e');
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// True while anything is still up — connected, or on its way there.
+  ///
+  /// Stopping the tunnel means sending an intent to a service in another
+  /// process and hearing nothing back, so [AndroidVpnEngine.disconnect] uses
+  /// this to check the stop actually took rather than assuming it did.
+  static Future<bool> isTunnelActive() async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('isTunnelActive') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('tunnel-state check failed: $e');
       return false;
     } on MissingPluginException {
       return false;

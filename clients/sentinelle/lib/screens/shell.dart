@@ -123,8 +123,16 @@ class _VeilShellState extends State<VeilShell> {
       );
     }
 
-    // Mobile paints behind the system bars (edge-to-edge) and insets by hand.
-    return Scaffold(body: inner);
+    // Mobile paints behind the system bars (edge-to-edge) and insets by hand:
+    // every page in the narrow layout has its own SafeArea, and the floating
+    // tab bar sits above the navigation inset.
+    //
+    // The wide layout has no such handling — it was written for a desktop
+    // window, where there are no system bars to avoid. On a tablet that put
+    // the sidebar under the clock and the page under the navigation pill.
+    // Tablets run full screen (see main.dart), so this inset is normally zero;
+    // it is here for the devices and windowed modes that decline to hide them.
+    return Scaffold(body: wide ? SafeArea(child: inner) : inner);
   }
 
   /// Keeps the floating bar clear of the system navigation area.

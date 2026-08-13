@@ -38,22 +38,44 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Veil: Android hands a **null** intent to a service it recreated by
+        // itself, and upstream dereferenced it on the very next line. Combined
+        // with START_STICKY below that turned "the user pressed Disconnect"
+        // into a service the system felt entitled to bring back.
+        if (intent == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         AppConfigs.V2RAY_SERVICE_COMMANDS startCommand = (AppConfigs.V2RAY_SERVICE_COMMANDS) intent.getSerializableExtra("COMMAND");
+        if (startCommand == null) {
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.START_SERVICE)) {
             // Veil: a new run must not inherit the previous one's "the user
             // stopped this", or the next genuine drop would be ignored.
             AppConfigs.USER_REQUESTED_STOP = false;
+            // Veil: this instance can be reused when a start lands between
+            // stopSelf() and onDestroy(), so the teardown latch is released
+            // here rather than only at construction.
+            stopped = false;
             v2rayConfig = (V2rayConfig) intent.getSerializableExtra("V2RAY_CONFIG");
             if (v2rayConfig == null) {
-                this.onDestroy();
+                // Veil: upstream called onDestroy() — which does nothing but
+                // call super — and then went on to dereference the null config.
+                stopAllProcess();
+                return START_NOT_STICKY;
             }
             if (V2rayCoreManager.getInstance().isV2rayCoreRunning()) {
                 V2rayCoreManager.getInstance().stopCore();
             }
             if (V2rayCoreManager.getInstance().startCore(v2rayConfig)) {
-                Log.e(V2rayProxyOnlyService.class.getSimpleName(), "onStartCommand success => v2ray core started.");
+                Log.e(V2rayVPNService.class.getSimpleName(), "onStartCommand success => v2ray core started.");
             } else {
-                this.onDestroy();
+                // Veil: a failed start used to leave the service up with no
+                // core behind it — a foreground service the system eventually
+                // kills, and until it does, a tunnel the app cannot see.
+                stopAllProcess();
             }
         } else if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE)) {
             // Veil: somebody asked for this — the notification's DISCONNECT
@@ -63,6 +85,11 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             AppConfigs.USER_REQUESTED_STOP = true;
             V2rayCoreManager.getInstance().stopCore();
             AppConfigs.V2RAY_CONFIG = null;
+            // Veil: and whatever the core made of that, this service does not
+            // outlive the command that stopped it. stopAllProcess is latched,
+            // so the call the core has already made through the listener makes
+            // this one a no-op.
+            stopAllProcess();
         } else if (startCommand.equals(AppConfigs.V2RAY_SERVICE_COMMANDS.MEASURE_DELAY)) {
             new Thread(() -> {
                 Intent sendB = new Intent("CONNECTED_V2RAY_SERVER_DELAY");
@@ -71,16 +98,54 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
                 sendBroadcast(sendB);
             }, "MEASURE_CONNECTED_V2RAY_SERVER_DELAY").start();
         } else {
-            this.onDestroy();
+            stopAllProcess();
         }
-        return START_STICKY;
+        // Veil: START_NOT_STICKY, not START_STICKY.
+        //
+        // A tunnel must never come back without somebody asking for it. Sticky
+        // tells Android to recreate this service after the process goes away,
+        // which is how a deliberate disconnect could be followed seconds later
+        // by the VPN — and its notification — returning on their own. If the
+        // process dies the right outcome is that the tunnel stays down.
+        return START_NOT_STICKY;
     }
 
+    /**
+     * Veil: latch, because this is now reachable from three directions — the
+     * stop command, the core's own shutdown callback, and onRevoke — and the
+     * first two can arrive within the same call stack.
+     */
+    private volatile boolean stopped = false;
+
     private void stopAllProcess() {
-        stopForeground(true);
+        if (stopped) {
+            return;
+        }
+        stopped = true;
         isRunning = false;
+        try {
+            stopForeground(true);
+        } catch (Exception e) {
+            // ignored
+        }
         if (process != null) {
-            process.destroy();
+            try {
+                process.destroy();
+            } catch (Exception e) {
+                // ignored
+            }
+            process = null;
+        }
+        // Veil: closing the TUN device before stopSelf. This is what Android
+        // watches to decide the VPN is over — leaving it open is the "VPN is
+        // still on after I disconnected" state, key icon and all.
+        try {
+            if (mInterface != null) {
+                mInterface.close();
+                mInterface = null;
+            }
+        } catch (Exception e) {
+            // ignored
         }
         V2rayCoreManager.getInstance().stopCore();
         try {
@@ -89,17 +154,15 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             //ignore
             Log.e("CANT_STOP", "SELF");
         }
-        try {
-            mInterface.close();
-        } catch (Exception e) {
-            // ignored
-        }
-
     }
 
     private void setup() {
         Intent prepare_intent = prepare(this);
         if (prepare_intent != null) {
+            // Veil: no VPN consent, so there is no tunnel to build. Upstream
+            // returned and left a foreground service running a core whose
+            // packets nothing would ever carry.
+            stopAllProcess();
             return;
         }
         Builder builder = new Builder();
@@ -184,7 +247,7 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             sendFileDescriptor();
         } catch (Exception e) {
             Log.e("VPN_SERVICE", "FAILED=>", e);
-            this.onDestroy();
+            stopAllProcess();
         }
     }
 

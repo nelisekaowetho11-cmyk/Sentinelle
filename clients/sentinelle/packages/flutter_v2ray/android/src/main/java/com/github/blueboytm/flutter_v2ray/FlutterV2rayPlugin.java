@@ -104,7 +104,19 @@ public class FlutterV2rayPlugin implements FlutterPlugin, ActivityAware, PluginR
                 case "initializeV2Ray":
                     String iconResourceName = call.argument("notificationIconResourceName");
                     String iconResourceType = call.argument("notificationIconResourceType");
-                    V2rayController.init(binding.getApplicationContext(), binding.getApplicationContext().getResources().getIdentifier(iconResourceName, iconResourceType, binding.getApplicationContext().getPackageName()), "Flutter V2ray");
+                    // Veil: the app's own label, not the plugin's name. This is
+                    // what names the notification channel, so every user's
+                    // notification settings listed a "Flutter V2ray VPN status"
+                    // channel for an app called Sentinelle.
+                    Context appContext = binding.getApplicationContext();
+                    String appName;
+                    try {
+                        appName = appContext.getApplicationInfo()
+                                .loadLabel(appContext.getPackageManager()).toString();
+                    } catch (Exception e) {
+                        appName = "VPN";
+                    }
+                    V2rayController.init(appContext, appContext.getResources().getIdentifier(iconResourceName, iconResourceType, appContext.getPackageName()), appName);
                     result.success(null);
                     break;
                 case "getServerDelay":

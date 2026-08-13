@@ -20,21 +20,47 @@ import libv2ray.Libv2ray;
 
 public class V2rayController {
 
+    /**
+     * Veil: registered once per process.
+     *
+     * init() is called from the plugin *and* from the app's own widget and tile
+     * path, and upstream registered a fresh receiver on every call — one more
+     * leaked receiver, and one more redundant delivery of a broadcast that
+     * arrives once a second, for every connection made.
+     */
+    private static boolean stateReceiverRegistered = false;
+
     public static void init(final Context context, final int app_icon, final String app_name) {
         Utilities.copyAssets(context);
         AppConfigs.APPLICATION_ICON = app_icon;
         AppConfigs.APPLICATION_NAME = app_name;
 
+        if (stateReceiverRegistered) {
+            return;
+        }
         BroadcastReceiver receiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context arg0, Intent arg1) {
-                AppConfigs.V2RAY_STATE = (AppConfigs.V2RAY_STATES) arg1.getExtras().getSerializable("STATE");
+                if (arg1 == null || arg1.getExtras() == null) {
+                    return;
+                }
+                Object state = arg1.getExtras().getSerializable("STATE");
+                if (state instanceof AppConfigs.V2RAY_STATES) {
+                    AppConfigs.V2RAY_STATE = (AppConfigs.V2RAY_STATES) state;
+                }
             }
         };
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, new IntentFilter("V2RAY_CONNECTION_INFO"), Context.RECEIVER_EXPORTED);
-        } else {
-            context.registerReceiver(receiver, new IntentFilter("V2RAY_CONNECTION_INFO"));
+        try {
+            Context app = context.getApplicationContext();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                app.registerReceiver(receiver, new IntentFilter("V2RAY_CONNECTION_INFO"), Context.RECEIVER_EXPORTED);
+            } else {
+                app.registerReceiver(receiver, new IntentFilter("V2RAY_CONNECTION_INFO"));
+            }
+            stateReceiverRegistered = true;
+        } catch (Exception ignored) {
+            // Without it getConnectionState() is stale, which the app's own
+            // watcher already covers.
         }
     }
 

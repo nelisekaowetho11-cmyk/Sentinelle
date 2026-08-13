@@ -30,12 +30,16 @@ enum AuthStage { checking, loggedOut, loggedIn }
 class AppState extends ChangeNotifier {
   /// [engine] is injectable so tests can drive the state/stats streams
   /// directly instead of starting a real core.
-  AppState({VpnEngine? engine}) {
+  AppState({VpnEngine? engine, this.adoptedTunnel = false}) {
     _engine = engine ??
         (Platform.isAndroid ? AndroidVpnEngine() : DesktopVpnEngine());
     _stateSub = _engine.stateStream.listen(_onVpnState);
     _statsSub = _engine.statsStream.listen(_onVpnStats);
   }
+
+  /// The app opened into a tunnel that was already running — see
+  /// [AndroidVpnEngine.sweepOrphans].
+  final bool adoptedTunnel;
 
   late final VpnEngine _engine;
   VpnEngine get engine => _engine;
@@ -618,6 +622,16 @@ class AppState extends ChangeNotifier {
   Future<void> bootstrap() async {
     brand = Storage.I.brand;
     unawaited(refreshLaunchAtLogin());
+
+    // A tunnel that was already up when the app opened is ours to show, not to
+    // tear down. Claimed before anything else so the connect page never paints
+    // "disconnected" over a working VPN.
+    final engine = _engine;
+    if (adoptedTunnel && engine is AndroidVpnEngine) {
+      engine.adoptRunningTunnel();
+      _wantConnection = true;
+      _tunnelEstablished = true;
+    }
     await sources.load();
 
     // Cached locations are on screen before any network call: a subscription

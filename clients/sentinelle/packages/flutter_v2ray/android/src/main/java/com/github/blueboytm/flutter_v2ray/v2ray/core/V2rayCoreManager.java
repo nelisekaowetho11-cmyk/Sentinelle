@@ -98,6 +98,16 @@ public final class V2rayCoreManager {
     private NotificationCompat.Builder notificationBuilder;
     private String notificationRemark = "";
 
+    /**
+     * Veil: an application context that outlives the service.
+     *
+     * The "we have disconnected" broadcast used to be sent through
+     * {@code v2rayServicesListener}, which the core's shutdown callback sets to
+     * null on its way out — so the one announcement nothing else can replace
+     * was exactly the one that could go missing.
+     */
+    private Context appContext;
+
     public static V2rayCoreManager getInstance() {
         if (INSTANCE == null) {
             synchronized (V2rayCoreManager.class) {
@@ -134,6 +144,11 @@ public final class V2rayCoreManager {
                 SERVICE_DURATION = Utilities.convertIntToTwoDigit(hours) + ":" + Utilities.convertIntToTwoDigit(minutes) + ":" + Utilities.convertIntToTwoDigit(seconds);
                 Intent connection_info_intent = new Intent("V2RAY_CONNECTION_INFO");
                 connection_info_intent.putExtra("STATE", V2rayCoreManager.getInstance().V2RAY_STATE);
+                // Veil: this broadcast is the only thing that crosses out of the
+                // :RunSoLibV2RayDaemon process, so the app's widget and tile read
+                // their state from it. Carrying the flag on every tick is what
+                // lets a live tunnel clear a stale one.
+                connection_info_intent.putExtra("USER_STOP", AppConfigs.USER_REQUESTED_STOP);
                 connection_info_intent.putExtra("DURATION", SERVICE_DURATION);
                 connection_info_intent.putExtra("UPLOAD_SPEED", uploadSpeed);
                 connection_info_intent.putExtra("DOWNLOAD_SPEED", downloadSpeed);
@@ -161,6 +176,7 @@ public final class V2rayCoreManager {
     public void setUpListener(Service targetService) {
         try {
             v2rayServicesListener = (V2rayServicesListener) targetService;
+            appContext = targetService.getApplicationContext();
             Libv2ray.initV2Env(getUserAssetsPath(targetService.getApplicationContext()), "");
             isLibV2rayCoreInitialized = true;
             SERVICE_DURATION = "00:00:00";
@@ -204,24 +220,71 @@ public final class V2rayCoreManager {
         return true;
     }
 
+    /**
+     * Veil: guards the mutual recursion between this and the service's own
+     * teardown. {@link #stopCore()} asks the service to stop, and the service's
+     * stop asks the core to stop; upstream only avoided looping because the
+     * second call found the core already down.
+     */
+    private volatile boolean stopping = false;
+
+    /**
+     * Veil: the service is now torn down whether or not the core says it is
+     * running.
+     *
+     * Upstream made {@code stopService()} conditional on
+     * {@code isV2rayCoreRunning()}, and that condition is false in more
+     * situations than it looks: a core that exited on its own, a start that
+     * failed before the run loop, a second stop arriving behind the first. In
+     * every one of them the VpnService kept the TUN device it had established
+     * and its foreground notification, so Android went on reporting an active
+     * VPN — and routing the phone's traffic into a tunnel with nothing at the
+     * other end — while the app had already reported "disconnected" and moved
+     * on. Reconnecting and disconnecting again was the only way out, because
+     * that path found the core running and took the honest branch.
+     */
     public void stopCore() {
+        if (stopping) {
+            return;
+        }
+        stopping = true;
         try {
-            NotificationManager notificationManager = (NotificationManager) v2rayServicesListener.getService().getSystemService(Context.NOTIFICATION_SERVICE);
-            if (notificationManager != null) {
-                notificationManager.cancel(NOTIFICATION_ID);
+            Service service = v2rayServicesListener == null
+                    ? null : v2rayServicesListener.getService();
+            if (service != null) {
+                NotificationManager notificationManager = (NotificationManager) service.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (notificationManager != null) {
+                    notificationManager.cancel(NOTIFICATION_ID);
+                }
             }
             notificationBuilder = null;
             lastNotificationText = null;
             if (isV2rayCoreRunning()) {
-                v2RayPoint.stopLoop();
-                v2rayServicesListener.stopService();
-                Log.e(V2rayCoreManager.class.getSimpleName(), "stopCore success => v2ray core stopped.");
+                try {
+                    v2RayPoint.stopLoop();
+                    Log.e(V2rayCoreManager.class.getSimpleName(), "stopCore success => v2ray core stopped.");
+                } catch (Exception e) {
+                    Log.e(V2rayCoreManager.class.getSimpleName(), "stopLoop failed =>", e);
+                }
             } else {
-                Log.e(V2rayCoreManager.class.getSimpleName(), "stopCore failed => v2ray core not running.");
+                Log.e(V2rayCoreManager.class.getSimpleName(), "stopCore => v2ray core was not running.");
+            }
+            // Unconditionally, and after the core: the tunnel device and the
+            // foreground service belong to the service, and leaving either up
+            // is what the user sees as "the VPN is still on".
+            V2rayServicesListener listener = v2rayServicesListener;
+            if (listener != null) {
+                try {
+                    listener.stopService();
+                } catch (Exception e) {
+                    Log.e(V2rayCoreManager.class.getSimpleName(), "stopService failed =>", e);
+                }
             }
             sendDisconnectedBroadCast();
         } catch (Exception e) {
             Log.e(V2rayCoreManager.class.getSimpleName(), "stopCore failed =>", e);
+        } finally {
+            stopping = false;
         }
     }
 
@@ -233,9 +296,20 @@ public final class V2rayCoreManager {
         hours = 0;
         uploadSpeed = 0;
         downloadSpeed = 0;
-        if (v2rayServicesListener != null) {
+        // Veil: from a context of our own rather than through the listener.
+        // The core's own shutdown callback clears that listener before this
+        // runs, and the announcement of a tunnel going down is the one that
+        // must never be dropped — it is how the app, the widget and the tile
+        // all learn there is nothing running any more.
+        Context context = appContext;
+        if (context != null) {
             Intent connection_info_intent = new Intent("V2RAY_CONNECTION_INFO");
             connection_info_intent.putExtra("STATE", V2rayCoreManager.getInstance().V2RAY_STATE);
+            // Veil: was this stop asked for? Only this process knows, and only
+            // this broadcast leaves it. Without it the app treats a tap on the
+            // notification's DISCONNECT — or on the widget — as a tunnel that
+            // dropped on its own, and reconnects a few seconds later.
+            connection_info_intent.putExtra("USER_STOP", AppConfigs.USER_REQUESTED_STOP);
             connection_info_intent.putExtra("DURATION", SERVICE_DURATION);
             connection_info_intent.putExtra("UPLOAD_SPEED", uploadSpeed);
             connection_info_intent.putExtra("DOWNLOAD_SPEED", uploadSpeed);
@@ -243,9 +317,8 @@ public final class V2rayCoreManager {
             connection_info_intent.putExtra("DOWNLOAD_TRAFFIC", uploadSpeed);
             try {
                 // Veil: kept to our own package, like the tick above.
-                connection_info_intent.setPackage(
-                        v2rayServicesListener.getService().getPackageName());
-                v2rayServicesListener.getService().getApplicationContext().sendBroadcast(connection_info_intent);
+                connection_info_intent.setPackage(context.getPackageName());
+                context.sendBroadcast(connection_info_intent);
             } catch (Exception e) {
                 //ignore
             }
@@ -324,18 +397,31 @@ public final class V2rayCoreManager {
             return;
         }
 
-        // Check notification permission for Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                return;
-            }
-        }
+        // Veil: upstream returned here when POST_NOTIFICATIONS was not granted,
+        // which skipped startForeground() — and a foreground service that never
+        // calls it is killed by the system a few seconds later, taking the
+        // tunnel with it. Denying the permission suppresses the *display* of a
+        // foreground-service notification; it does not stop the service from
+        // posting one. So the notification is always built, and the permission
+        // only decides whether the per-second repaints below are worth doing.
 
         Intent launchIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         if (launchIntent != null) {
-            launchIntent.setAction("FROM_DISCONNECT_BTN");
-            launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            // Veil: upstream set FLAG_ACTIVITY_CLEAR_TASK here, and an action of
+            // "FROM_DISCONNECT_BTN" that nothing ever reads.
+            //
+            // CLEAR_TASK tears the existing task down and builds a new one, so
+            // tapping the notification cold-started the app: a fresh Flutter
+            // engine, and with it the startup sweep that stops any core left
+            // behind by a previous run. The tunnel the notification was
+            // advertising died the moment you touched it.
+            //
+            // SINGLE_TOP | CLEAR_TOP brings the task that is already there back
+            // to the front instead, which is what tapping an ongoing
+            // notification is supposed to do.
+            launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         }
         final int flags;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -348,18 +434,33 @@ public final class V2rayCoreManager {
 
         String notificationChannelID = createNotificationChannelID(v2rayConfig.APPLICATION_NAME);
 
-        Intent stopIntent;
-        if (AppConfigs.V2RAY_CONNECTION_MODE == AppConfigs.V2RAY_CONNECTION_MODES.PROXY_ONLY) {
-            stopIntent = new Intent(context, V2rayProxyOnlyService.class);
-        } else if (AppConfigs.V2RAY_CONNECTION_MODE == AppConfigs.V2RAY_CONNECTION_MODES.VPN_TUN) {
-            stopIntent = new Intent(context, V2rayVPNService.class);
-        } else {
-            return;
-        }
+        // Veil: addressed to the service that is actually running, rather than
+        // to whichever one AppConfigs.V2RAY_CONNECTION_MODE names.
+        //
+        // That static is set in the *app's* process, and this code runs in
+        // :RunSoLibV2RayDaemon — where it has never been anything but its
+        // default. In proxy mode the DISCONNECT button was therefore wired to
+        // the VPN service, which is not the service holding the connection.
+        // `this` is the service that owns the core, by construction.
+        Intent stopIntent = new Intent(context, context.getClass());
         stopIntent.putExtra("COMMAND", AppConfigs.V2RAY_SERVICE_COMMANDS.STOP_SERVICE);
 
         PendingIntent pendingIntent = PendingIntent.getService(
                 context, 0, stopIntent, flags);
+
+        // Veil: a fallback label, because an action with a null title is a
+        // button the shade lays out and draws nothing in.
+        //
+        // The title comes from a static the *Dart* side sets, so a tunnel
+        // started from the widget or the quick settings tile — which can happen
+        // in a process where Flutter has never run — produced a notification
+        // with an invisible disconnect button. It was there on the runs where
+        // the app had connected at least once, and missing on the others, which
+        // is exactly the "sometimes it has a disconnect button" of it.
+        String disconnectLabel = v2rayConfig.NOTIFICATION_DISCONNECT_BUTTON_NAME;
+        if (disconnectLabel == null || disconnectLabel.trim().isEmpty()) {
+            disconnectLabel = "DISCONNECT";
+        }
 
         // Build the notification
         notificationRemark = v2rayConfig.REMARK;
@@ -371,7 +472,7 @@ public final class V2rayCoreManager {
                 // The one-line form is what shows on the lock screen; the
                 // expanded form has room for the session totals as well.
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(buildTrafficDetail()))
-                .addAction(0, v2rayConfig.NOTIFICATION_DISCONNECT_BUTTON_NAME, pendingIntent)
+                .addAction(0, disconnectLabel, pendingIntent)
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setShowWhen(false)
                 .setOnlyAlertOnce(true)

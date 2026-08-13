@@ -34,6 +34,22 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Long press on the quick settings tile.
+                 Android resolves this action against the tile's own package and
+                 opens whatever activity answers it; with nothing declared it
+                 falls back to the system "App info" screen, which is where a
+                 long press used to land. A tile that toggles on a tap and
+                 offers settings on a long press is the convention every
+                 built-in tile follows, and the app is what someone holding it
+                 is looking for — the location picker lives there.
+
+                 CATEGORY_DEFAULT is required: SystemUI resolves this as an
+                 implicit intent before it launches it, and a filter without
+                 the default category is not resolvable that way. -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
         </activity>
         <!-- Quick settings tile: the toggle in the notification shade. -->
         <service

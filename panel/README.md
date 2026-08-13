@@ -59,8 +59,8 @@ releases](https://github.com/XTLS/Xray-core/releases) on first start, into
 ## Install
 
 ```bash
-git clone https://github.com/YOUR-NAME/sentinelle.git
-cd sentinelle/panel
+git clone https://github.com/miredaw/Sentinelle.git
+cd Sentinelle/panel
 
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
