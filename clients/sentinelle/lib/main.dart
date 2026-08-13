@@ -22,6 +22,15 @@ import 'widgets/common.dart';
 bool get _isDesktop =>
     Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+/// macOS asking to quit, before it does.
+///
+/// Every other exit this app has goes through the window's close button, which
+/// is the only one Windows offers. macOS has ⌘Q, the app menu and Dock → Quit,
+/// and all three call `NSApplication.terminate:` without closing a window — so
+/// they skipped the teardown entirely and left the core running with the
+/// system proxy still pointed at it. See macos/Runner/AppDelegate.swift.
+const MethodChannel _lifecycle = MethodChannel('app.veil/lifecycle');
+
 /// True when the app opened into a tunnel that was already running.
 ///
 /// Set before `runApp` because the check has to happen alongside the startup
@@ -128,6 +137,14 @@ class _VeilAppState extends State<VeilApp>
       _tray = TrayService(_state, onQuit: quit);
       _trayReady = _tray!.install();
       WidgetsBinding.instance.addPostFrameCallback((_) => _revealWindow());
+    }
+    if (Platform.isMacOS) {
+      // Answering this is what turns ⌘Q into the same orderly exit as the
+      // close button. `quit` ends in exit(0), so the reply never arrives —
+      // the native side has a timeout for exactly that reason.
+      _lifecycle.setMethodCallHandler((call) async {
+        if (call.method == 'shutdown') await quit();
+      });
     }
   }
 

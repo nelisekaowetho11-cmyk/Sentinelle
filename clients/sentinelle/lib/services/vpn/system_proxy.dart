@@ -46,7 +46,7 @@ class SystemProxy {
         _applied = await _windowsVerify('$host:$port');
         return _applied;
       } else if (Platform.isMacOS) {
-        await _saveState({'platform': 'macos'});
+        await _saveState(await _macosRead());
         await _macosEnable(host, port);
       } else if (Platform.isLinux) {
         await _saveState(await _linuxRead());
@@ -79,7 +79,7 @@ class SystemProxy {
       if (Platform.isWindows) {
         await _windowsRestore(saved);
       } else if (Platform.isMacOS) {
-        await _macosDisable();
+        await _macosRestore(saved);
       } else if (Platform.isLinux) {
         await _linuxRestore(saved);
       }
@@ -99,7 +99,7 @@ class SystemProxy {
       if (Platform.isWindows) {
         await _windowsRestore(saved);
       } else if (Platform.isMacOS) {
-        await _macosDisable();
+        await _macosRestore(saved);
       } else if (Platform.isLinux) {
         await _linuxRestore(saved);
       }
@@ -111,10 +111,20 @@ class SystemProxy {
 
   // ── Backup file ────────────────────────────────────────────────────────────
 
+  /// Never overwrites a backup that is already there.
+  ///
+  /// The kill switch deliberately leaves our own settings in place across a
+  /// reconnect, and a second [enable] would then record *those* as "what the
+  /// user had" — so the eventual restore would put the machine back to a proxy
+  /// that is ours and about to die with us. A backup is cleared on every
+  /// successful restore, so the only file that can be found here is one that
+  /// still describes the machine as we found it.
   static Future<void> _saveState(Map<String, dynamic>? state) async {
     if (state == null) return;
     try {
-      await (await _stateFile()).writeAsString(jsonEncode(state), flush: true);
+      final f = await _stateFile();
+      if (await f.exists()) return;
+      await f.writeAsString(jsonEncode(state), flush: true);
     } catch (_) {}
   }
 
@@ -260,6 +270,84 @@ class SystemProxy {
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty && !s.startsWith('*'))
         .toList();
+  }
+
+  /// What each network service had before we touched it.
+  ///
+  /// Windows and Linux have always recorded this; macOS recorded the bare word
+  /// "macos" and then simply switched the proxy *off* on disconnect. On a
+  /// machine with a proxy of its own — managed and corporate Macs, mostly —
+  /// that took the user's setting away and never gave it back.
+  static Future<Map<String, dynamic>> _macosRead() async {
+    final services = <String, dynamic>{};
+    for (final s in await _macServices()) {
+      services[s] = {
+        'web': await _macReadOne('-getwebproxy', s),
+        'secure': await _macReadOne('-getsecurewebproxy', s),
+      };
+    }
+    return {'platform': 'macos', 'services': services};
+  }
+
+  static Future<Map<String, String>> _macReadOne(
+      String verb, String service) async {
+    try {
+      final r = await Process.run('networksetup', [verb, service]);
+      return parseProxyOutput(r.stdout as String);
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Turns `networksetup -getwebproxy` output into a map.
+  ///
+  /// ```
+  /// Enabled: Yes
+  /// Server: proxy.corp.example
+  /// Port: 8080
+  /// ```
+  static Map<String, String> parseProxyOutput(String stdout) {
+    final out = <String, String>{};
+    for (final line in stdout.split('\n')) {
+      final i = line.indexOf(':');
+      if (i <= 0) continue;
+      out[line.substring(0, i).trim().toLowerCase()] =
+          line.substring(i + 1).trim();
+    }
+    return out;
+  }
+
+  static Future<void> _macosRestore(Map<String, dynamic>? saved) async {
+    final services = (saved?['services'] as Map?)?.cast<String, dynamic>();
+    if (services == null || services.isEmpty) {
+      // Nothing recorded — a backup written by an older build, or a read that
+      // failed. Off is the safe answer: it is what the machine looked like for
+      // everyone who had no proxy of their own, which is nearly everyone.
+      await _macosDisable();
+      return;
+    }
+    for (final entry in services.entries) {
+      final state = (entry.value as Map).cast<String, dynamic>();
+      await _macRestoreOne(entry.key, web: true, was: state['web']);
+      await _macRestoreOne(entry.key, web: false, was: state['secure']);
+    }
+  }
+
+  static Future<void> _macRestoreOne(String service,
+      {required bool web, Object? was}) async {
+    final setProxy = web ? '-setwebproxy' : '-setsecurewebproxy';
+    final setState = web ? '-setwebproxystate' : '-setsecurewebproxystate';
+    final prev = (was as Map?)?.cast<String, dynamic>() ?? const {};
+    final enabled = (prev['enabled'] as String?)?.toLowerCase() == 'yes';
+    final server = (prev['server'] as String?) ?? '';
+    final port = (prev['port'] as String?) ?? '';
+
+    if (!enabled || server.isEmpty || port.isEmpty || port == '0') {
+      await Process.run('networksetup', [setState, service, 'off']);
+      return;
+    }
+    await Process.run('networksetup', [setProxy, service, server, port]);
+    await Process.run('networksetup', [setState, service, 'on']);
   }
 
   static Future<void> _macosEnable(String host, int port) async {
