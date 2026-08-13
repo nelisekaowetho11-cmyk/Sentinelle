@@ -76,6 +76,15 @@ class SystemProxy {
   static Future<void> disable() async {
     try {
       final saved = await _readState();
+      // A proxy we never set is not ours to switch off.
+      //
+      // `connect` calls this before it enables anything, so the old blanket
+      // disable ran *first* and turned off whatever the user already had —
+      // and then the backup taken a moment later recorded the machine as
+      // having no proxy, which is exactly what got restored on quit. [_applied]
+      // is the second opinion: it means this session did set the proxy, so
+      // there is something to undo even if writing the backup failed.
+      if (saved == null && !_applied) return;
       if (Platform.isWindows) {
         await _windowsRestore(saved);
       } else if (Platform.isMacOS) {
