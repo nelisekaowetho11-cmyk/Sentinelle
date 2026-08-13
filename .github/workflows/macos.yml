@@ -14,6 +14,14 @@ on:
   push:
     tags:
       - 'v*'
+    # Every push that touches the client rebuilds it. The macOS build is the
+    # one nobody here can run locally, so leaving it to be remembered by hand
+    # means finding out it broke weeks later.
+    branches:
+      - main
+    paths:
+      - 'clients/sentinelle/**'
+      - '.github/workflows/macos.yml'
 
 permissions:
   contents: write
