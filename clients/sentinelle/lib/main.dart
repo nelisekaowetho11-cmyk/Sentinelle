@@ -58,6 +58,12 @@ Future<void> main() async {
         backgroundColor: VeilColors.bg,
         // We draw our own title bar and buttons.
         titleBarStyle: TitleBarStyle.hidden,
+        // macOS keeps its traffic lights on show even with the title bar
+        // hidden, so the window would carry two sets of buttons — the system's
+        // at the top left and ours at the top right. Null elsewhere: on
+        // Windows and Linux there is nothing to hide and the plugin defaults
+        // this to true.
+        windowButtonVisibility: Platform.isMacOS ? false : null,
         title: kAppWindowTitle,
       ),
       () async {

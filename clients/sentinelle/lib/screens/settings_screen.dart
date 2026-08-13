@@ -1025,6 +1025,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _noteRestart();
       return;
     }
+    // macOS and Linux cannot give the app root, so the only useful thing to
+    // show is how to do it by hand. Offering "Restart now" there put up a
+    // button that could never work.
+    if (!Elevation.canRelaunch) {
+      _noteRestart();
+      if (mounted) showVeilToast(context, Elevation.manualInstruction);
+      return;
+    }
     final restart = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

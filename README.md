@@ -3,6 +3,7 @@
 [![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-9%2B-3ddc84.svg)](clients/sentinelle)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078d4.svg)](clients/sentinelle)
+[![macOS](https://img.shields.io/badge/macOS-10.15%2B-000000.svg)](clients/sentinelle)
 
 A self-hosted VPN stack: a management panel, cross-platform clients, and a
 tunnel for getting traffic out of a filtered network.
@@ -14,7 +15,7 @@ carry any traffic at all between two servers.
 ```
 ┌──────────────┐   VLESS / VMess / Trojan / Shadowsocks   ┌──────────────┐
 │   clients    │ ◄──────────────────────────────────────► │  Xray on the │
-│ Android · Win│                                          │  panel host  │
+│ mobile · desk│                                          │  panel host  │
 └──────┬───────┘                                          └──────┬───────┘
        │  sign in, fetch configs, report device count            │
        ▼                                                         │
@@ -31,7 +32,7 @@ carry any traffic at all between two servers.
 | Project | What it is | Language |
 |---|---|---|
 | [`panel/`](panel) | Web panel: users, inbounds, quotas, subscriptions, resellers | Python (Flask) + React |
-| [`clients/sentinelle/`](clients/sentinelle) | VPN client for Android and Windows | Dart (Flutter) |
+| [`clients/sentinelle/`](clients/sentinelle) | VPN client for Android, Windows and macOS | Dart (Flutter) |
 | [`ipxtun/`](ipxtun) | Encrypted tunnel over raw IP or ICMP, for filtered networks | Go |
 
 ---
@@ -81,7 +82,7 @@ Independent of the rest of the stack — it will carry any traffic you point at 
 Each project has its own README with real instructions:
 
 - **[panel/README.md](panel/README.md)** — install on a VPS, first login, creating users
-- **[clients/sentinelle/README.md](clients/sentinelle/README.md)** — building the Android APK and the Windows client
+- **[clients/sentinelle/README.md](clients/sentinelle/README.md)** — building the Android APK and the desktop clients
 - **[ipxtun/README.md](ipxtun/README.md)** — configuration and deployment
 
 The fastest path to something working:

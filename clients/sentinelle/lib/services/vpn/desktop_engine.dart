@@ -129,9 +129,15 @@ class DesktopVpnEngine implements VpnEngine {
           'the app or an option the installed core is too old for — the log '
           'below names the field.';
     }
-    if (t.contains('missing tun') || t.contains('wintun')) {
-      return 'The TUN driver could not be opened. Reinstall the app, or switch '
-          'to Proxy mode in Settings.';
+    if (t.contains('missing tun') || t.contains('wintun') || t.contains('utun')) {
+      // macOS has no driver to install: utun is in the kernel and the only
+      // thing between the core and a working device is root.
+      return Platform.isMacOS
+          ? 'The utun device could not be created — that needs root. '
+              '${Elevation.manualInstruction} Or switch to Proxy mode in '
+              'Settings.'
+          : 'The TUN driver could not be opened. Reinstall the app, or switch '
+              'to Proxy mode in Settings.';
     }
     return 'The tunnel stopped unexpectedly (exit code $exitCode).';
   }

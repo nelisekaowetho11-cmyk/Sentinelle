@@ -1,0 +1,122 @@
+name: macOS client
+
+# Builds Sentinelle.app on a GitHub-hosted Mac, because building a macOS app
+# needs Xcode and Xcode only runs on macOS. Nothing here needs an Apple
+# Developer account: the result is ad-hoc signed, which is enough to run but
+# not enough to satisfy Gatekeeper on a machine that did not build it — see
+# "Opening it" in clients/sentinelle/README.md.
+#
+# Run it from the Actions tab (Run workflow), or push a tag like v1.7.4 to get
+# a release with the .dmg and .zip attached.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: clients/sentinelle
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          # Pinned so a Flutter release cannot break a build that worked
+          # yesterday. Bump it to whatever `flutter --version` says locally.
+          flutter-version: 3.41.6
+          cache: true
+
+      - name: Versions
+        run: |
+          flutter --version
+          xcodebuild -version
+          pod --version
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # The e2e tags need a live panel and a real core, and skip themselves
+      # without them — excluded here so the log does not imply otherwise.
+      - name: Test
+        run: flutter test --exclude-tags e2e
+
+      - name: Build
+        run: flutter build macos --release
+
+      # Ad-hoc signing ("-"): no certificate, no Apple account. Without any
+      # signature at all, macOS refuses to launch an arm64 binary outright.
+      # Frameworks are signed before the bundle that contains them, which is
+      # the order codesign requires — `--deep` does the same thing and is
+      # deprecated for doing it unreliably.
+      - name: Sign (ad-hoc)
+        run: |
+          APP="build/macos/Build/Products/Release/Sentinelle.app"
+          find "$APP/Contents/Frameworks" -maxdepth 1 -name '*.framework' -print0 2>/dev/null |
+            xargs -0 -I {} codesign --force --sign - "{}"
+          codesign --force --sign - "$APP"
+          codesign --verify --verbose=2 "$APP"
+          # What actually came out. Flutter builds macOS release universal, and
+          # this is the line that proves it rather than assuming it.
+          lipo -archs "$APP/Contents/MacOS/Sentinelle"
+
+      - name: Package
+        id: package
+        run: |
+          APP="build/macos/Build/Products/Release/Sentinelle.app"
+          # 1.7.4+14 → 1.7.4-14: the build number is worth keeping, but a "+" in
+          # a download URL is decoded as a space by enough clients to matter.
+          VERSION=$(grep -m1 '^version:' pubspec.yaml | cut -d' ' -f2 | tr -d '\r')
+          VERSION=${VERSION//+/-}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          mkdir -p dist dmg-staging
+          cp -R "$APP" dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create -volname "Sentinelle" \
+            -srcfolder dmg-staging -ov -format UDZO \
+            "dist/Sentinelle-$VERSION-macos.dmg"
+
+          # ditto, not zip: the frameworks inside the bundle are symlink farms
+          # and `zip -r` flattens them into copies, which breaks the signature.
+          ditto -c -k --keepParent "$APP" "dist/Sentinelle-$VERSION-macos.zip"
+          ls -lh dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinelle-macos-${{ steps.package.outputs.version }}
+          path: clients/sentinelle/dist/*
+          if-no-files-found: error
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: clients/sentinelle/dist/*
+          body: |
+            macOS build of the Sentinelle client, ad-hoc signed and therefore
+            not notarised. macOS will refuse to open it until the quarantine
+            flag is cleared:
+
+            ```
+            xattr -dr com.apple.quarantine /Applications/Sentinelle.app
+            ```
+
+            Proxy mode works as an ordinary user. VPN (TUN) mode creates a
+            utun device and needs root:
+
+            ```
+            sudo /Applications/Sentinelle.app/Contents/MacOS/Sentinelle
+            ```

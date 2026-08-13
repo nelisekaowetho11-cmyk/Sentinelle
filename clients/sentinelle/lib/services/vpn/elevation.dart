@@ -37,6 +37,13 @@ class Elevation {
 
   /// True when [relaunchElevated] can actually do something. Elsewhere the UI
   /// shows [manualInstruction] instead of a button that would do nothing.
+  ///
+  /// macOS is deliberately not on this list even though `osascript` could raise
+  /// the authentication sheet. Elevating the *app* there moves its home
+  /// directory to root's, so the relaunched copy would come up with no account
+  /// signed in and none of the settings — a worse surprise than being told to
+  /// use `sudo`. Doing it properly needs a privileged helper installed with
+  /// `SMAppService`, and that needs a Developer ID-signed build.
   static bool get canRelaunch => Platform.isWindows;
 
   /// Relaunches this executable with elevation. Returns true when the new
@@ -84,7 +91,11 @@ class Elevation {
       return 'Right-click Sentinelle and choose "Run as administrator".';
     }
     if (Platform.isMacOS) {
-      return 'Start Sentinelle from a terminal with sudo.';
+      // The full path, because the binary inside the bundle is what has to be
+      // run — `sudo open -a Sentinelle` launches it as the ordinary user and
+      // looks like the instruction simply did not work.
+      return 'VPN mode needs root on macOS. Quit Sentinelle, then run: '
+          'sudo "${Platform.resolvedExecutable}"';
     }
     return 'Start Sentinelle with sudo, or grant it CAP_NET_ADMIN.';
   }

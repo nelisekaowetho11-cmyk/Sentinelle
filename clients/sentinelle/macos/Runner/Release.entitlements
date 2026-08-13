@@ -1,8 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The App Sandbox is deliberately off, and this app cannot work with it on.
+
+  It has to launch sing-box (a binary it downloads into Application Support and
+  marks executable), talk to it over a loopback port, run `networksetup` to
+  point the machine at the local proxy, and — in VPN mode — open a utun device.
+  Every one of those is refused inside the sandbox, and the failures arrive as
+  unexplained "operation not permitted" lines in the core log.
+
+  The cost is that this build can never go to the Mac App Store, which is not
+  where it is distributed anyway. Notarised direct distribution does not
+  require the sandbox; it requires the Hardened Runtime, which Flutter's macOS
+  template leaves off and which can be turned on when there is a Developer ID
+  to sign with.
+-->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 </dict>
 </plist>

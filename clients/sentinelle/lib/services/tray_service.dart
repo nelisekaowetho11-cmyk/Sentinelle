@@ -44,7 +44,10 @@ class TrayService with TrayListener {
     if (!supported || _installed) return;
     try {
       trayManager.addListener(this);
-      await trayManager.setIcon(_iconPath);
+      // A template image is drawn as a silhouette that follows the menu bar,
+      // which is the only way an icon stays visible on macOS across light,
+      // dark and a tinted desktop behind a translucent bar. Ignored elsewhere.
+      await trayManager.setIcon(_iconPath, isTemplate: Platform.isMacOS);
       await _rebuildMenu();
       _installed = true;
       state.addListener(_onStateChanged);

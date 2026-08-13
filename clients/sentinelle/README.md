@@ -1,6 +1,6 @@
 # Sentinelle client
 
-VPN client for Android and Windows, in one Flutter codebase.
+VPN client for Android, Windows and macOS, in one Flutter codebase.
 
 Sign into a [Sentinelle panel](../../panel), paste a subscription link from any
 panel, or paste raw configs. All three work at once and land in a single list of
@@ -9,6 +9,7 @@ locations.
 ```
 Android   Xray, via a patched flutter_v2ray, on top of VpnService
 Windows   sing-box, in proxy mode or a full TUN tunnel
+macOS     sing-box, same two modes — TUN needs root, see below
 ```
 
 ---
@@ -23,12 +24,12 @@ Windows   sing-box, in proxy mode or a full TUN tunnel
   discovery, silence mDNS/NetBIOS, optionally refuse QUIC; the app reports which
   are actually holding
 - **Split tunnelling** — include or exclude apps (Android), or bind individual
-  processes to their own exit (Windows)
+  processes to their own exit (desktop)
 - **Recovery** — notices a dropped tunnel and reconnects with backoff; on
   Windows it can hold the system proxy closed so traffic fails rather than
   leaking
-- **Home screen widget and quick settings tile** (Android), **system tray with
-  recent/favourite/fastest locations** (Windows)
+- **Home screen widget and quick settings tile** (Android), **system tray /
+  menu bar with recent/favourite/fastest locations** (desktop)
 
 ---
 
@@ -80,7 +81,45 @@ flutter build windows --release
 sing-box is not bundled. The app downloads it on first use, or you can point at
 an existing binary in Settings.
 
-### Both, plus checks
+### macOS
+
+```bash
+flutter build macos --release
+# → build/macos/Build/Products/Release/Sentinelle.app
+```
+
+Needs Xcode. Without a Mac, push to GitHub and let
+[`.github/workflows/macos.yml`](../../.github/workflows/macos.yml) do it — run
+it from the Actions tab, or tag `v*` to get a release with a `.dmg` and `.zip`
+attached.
+
+**The App Sandbox is off, and has to be.** A sandboxed app cannot launch the
+sing-box binary it downloaded, run `networksetup`, or open a utun device; all
+three failures arrive as unexplained "operation not permitted" lines in the core
+log. That rules out the Mac App Store, which is not where this is distributed.
+
+**Opening it.** CI builds are ad-hoc signed, not notarised — there is no Apple
+Developer account behind them — so macOS quarantines the download and refuses to
+open it. Clear the flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Sentinelle.app
+```
+
+**VPN mode needs root.** Proxy mode runs as an ordinary user; a full TUN tunnel
+creates a utun device, which does not. The app cannot elevate itself the way it
+does on Windows — doing that properly needs a privileged helper installed with
+`SMAppService`, and that needs a Developer ID-signed build — so the honest
+version is:
+
+```bash
+sudo /Applications/Sentinelle.app/Contents/MacOS/Sentinelle
+```
+
+A `sudo` session has root's home directory, so it starts signed out and with
+default settings. That is the trade until there is a signed helper.
+
+### Everything else, plus checks
 
 `tool/build_release.ps1` builds every target and verifies the Play bundle has
 not accidentally kept the updater:
@@ -140,8 +179,8 @@ against upstream:
   and tunnel modes, because `AppConfigs.V2RAY_CONNECTION_MODE` is a process-wide
   static that upstream only ever sets
 
-Windows runs **sing-box**, which handles a TUN device and per-process routing
-that Xray on desktop does not.
+Windows and macOS run **sing-box**, which handles a TUN device and per-process
+routing that Xray on desktop does not.
 
 ### Things that are not obvious
 
@@ -189,7 +228,7 @@ lib/
   widgets/map/           the map is painted, not composed from widgets
 packages/flutter_v2ray/  vendored fork (MIT, Arshia Eihami)
 tool/                    release build and screenshot scripts
-test/                    141 tests, including rendered map/screen checks
+test/                    161 tests, including rendered map/screen checks
 ```
 
 ---

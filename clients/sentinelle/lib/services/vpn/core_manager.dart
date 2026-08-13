@@ -79,11 +79,39 @@ class CoreManager {
     return null;
   }
 
-  static String _arch() {
-    final env = (Platform.environment['PROCESSOR_ARCHITECTURE'] ?? '').toLowerCase();
-    if (env.contains('arm64')) return 'arm64';
-    if (Platform.version.toLowerCase().contains('arm64')) return 'arm64';
-    return 'amd64';
+  /// Cached: it shells out on POSIX, and the answer cannot change under us.
+  static String? _archCache;
+
+  static String _arch() => _archCache ??= _detectArch();
+
+  static String _detectArch() {
+    if (Platform.isWindows) {
+      // ARCHITEW6432 is what a 32-bit process on a 64-bit machine sees;
+      // PROCESSOR_ARCHITECTURE on its own would call that machine x86.
+      final env = [
+        Platform.environment['PROCESSOR_ARCHITEW6432'] ?? '',
+        Platform.environment['PROCESSOR_ARCHITECTURE'] ?? '',
+      ].join(' ').toLowerCase();
+      return env.contains('arm64') ? 'arm64' : 'amd64';
+    }
+    // `uname -m` rather than the Dart SDK's own architecture, because it is the
+    // one answer that stays right under Rosetta: a translated process reports
+    // x86_64 and must be handed an x86_64 core, not the arm64 one the machine
+    // could otherwise run.
+    try {
+      final r = Process.runSync('uname', ['-m']);
+      switch ((r.stdout as String).trim().toLowerCase()) {
+        case 'arm64':
+        case 'aarch64':
+          return 'arm64';
+        case 'x86_64':
+        case 'amd64':
+          return 'amd64';
+      }
+    } catch (_) {
+      // Fall through to the SDK's own idea of the architecture.
+    }
+    return Platform.version.toLowerCase().contains('arm64') ? 'arm64' : 'amd64';
   }
 
   static String _os() {
@@ -93,10 +121,19 @@ class CoreManager {
   }
 
   /// Release asset name for this machine.
-  static String assetName(CoreKind kind, String version) {
-    final arch = _arch();
+  ///
+  /// [os] and [arch] are injectable so the naming can be tested for every
+  /// platform from any of them.
+  static String assetName(
+    CoreKind kind,
+    String version, {
+    String? os,
+    String? arch,
+  }) {
+    final o = os ?? _os();
+    final a = arch ?? _arch();
     if (kind == CoreKind.xray) {
-      final map = {
+      const map = {
         'windows-amd64': 'Xray-windows-64.zip',
         'windows-arm64': 'Xray-windows-arm64-v8a.zip',
         'macos-amd64': 'Xray-macos-64.zip',
@@ -104,11 +141,16 @@ class CoreManager {
         'linux-amd64': 'Xray-linux-64.zip',
         'linux-arm64': 'Xray-linux-arm64-v8a.zip',
       };
-      return map['${_os()}-$arch'] ?? 'Xray-linux-64.zip';
+      return map['$o-$a'] ?? 'Xray-linux-64.zip';
     }
-    // sing-box publishes .zip for windows/macos and .tar.gz for linux
-    final ext = _os() == 'linux' ? 'tar.gz' : 'zip';
-    return 'sing-box-$version-${_os()}-$arch.$ext';
+    // The two projects disagree about what macOS is called: Xray publishes
+    // `Xray-macos-…`, sing-box publishes `sing-box-…-darwin-…`. Asking sing-box
+    // for "macos" is a 404 down every mirror, which is why the macOS build
+    // could never install a core.
+    final platform = o == 'macos' ? 'darwin' : o;
+    // Windows is the only .zip; darwin and linux are both .tar.gz.
+    final ext = platform == 'windows' ? 'zip' : 'tar.gz';
+    return 'sing-box-$version-$platform-$a.$ext';
   }
 
   static String _repo(CoreKind kind) =>
@@ -213,7 +255,8 @@ class CoreManager {
       exeName(kind),
       if (kind == CoreKind.xray) ...['geoip.dat', 'geosite.dat'],
       if (kind == CoreKind.singbox && Platform.isWindows) 'libcronet.dll',
-      if (kind == CoreKind.singbox && !Platform.isWindows) 'libcronet.so',
+      if (kind == CoreKind.singbox && Platform.isLinux) 'libcronet.so',
+      if (kind == CoreKind.singbox && Platform.isMacOS) 'libcronet.dylib',
     };
     return want.contains(fileName);
   }
