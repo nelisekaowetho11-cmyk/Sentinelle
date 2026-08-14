@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Sentinelle
+GenericName=VPN Client
+Comment=Connect through your own VPN panel
+# Absolute, because the binary loads its Flutter bundle from alongside itself
+# and a PATH lookup would find the /usr/bin symlink instead.
+Exec=/opt/sentinelle/sentinelle
+Icon=sentinelle
+Terminal=false
+Categories=Network;Security;
+Keywords=VPN;proxy;tunnel;xray;sing-box;
+StartupWMClass=sentinelle

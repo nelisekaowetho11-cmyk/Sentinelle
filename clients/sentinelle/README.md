@@ -1,6 +1,6 @@
 # Sentinelle client
 
-VPN client for Android, Windows and macOS, in one Flutter codebase.
+VPN client for Android, Windows, macOS and Linux, in one Flutter codebase.
 
 Sign into a [Sentinelle panel](../../panel), paste a subscription link from any
 panel, or paste raw configs. All three work at once and land in a single list of
@@ -10,6 +10,7 @@ locations.
 Android   Xray, via a patched flutter_v2ray, on top of VpnService
 Windows   sing-box, in proxy mode or a full TUN tunnel
 macOS     sing-box, same two modes — TUN needs root, see below
+Linux     sing-box, same again — GNOME for the system proxy
 ```
 
 ---
@@ -118,6 +119,47 @@ sudo /Applications/Sentinelle.app/Contents/MacOS/Sentinelle
 
 A `sudo` session has root's home directory, so it starts signed out and with
 default settings. That is the trade until there is a signed helper.
+
+### Linux
+
+```bash
+sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+  libstdc++-12-dev libayatana-appindicator3-dev libnotify-dev
+flutter build linux --release
+# → build/linux/x64/release/bundle/sentinelle
+```
+
+The last two packages belong to plugins rather than to Flutter: `tray_manager`
+needs appindicator for the system tray, `local_notifier` needs libnotify for
+desktop notifications. Both compile without them and then silently do nothing at
+runtime, which is the failure worth avoiding.
+
+[`.github/workflows/linux.yml`](../../.github/workflows/linux.yml) builds a
+`.tar.gz` and a `.deb`. It runs on **ubuntu-22.04 deliberately**: a Flutter
+binary links against the glibc it was built with and will not start on anything
+older, so building on the newest runner would quietly drop Debian 12 and Ubuntu
+22.04 users.
+
+```bash
+sudo apt install ./sentinelle_*_amd64.deb    # installs to /opt/sentinelle
+```
+
+Two things are narrower here than on the other desktops:
+
+- **The system proxy is set through `gsettings`**, so it applies to GNOME and to
+  apps that read the GNOME settings. On KDE or a bare WM, proxy mode still
+  serves a working local proxy — nothing points the rest of the desktop at it,
+  so aim apps at `127.0.0.1` yourself.
+- **The tray needs a host that shows one.** GNOME 40+ dropped tray icons unless
+  the AppIndicator extension is installed. The app checks whether its icon
+  actually landed and falls back to quitting on window close rather than hiding
+  into a tray that is not there.
+
+VPN (TUN) mode needs root, the same as macOS:
+
+```bash
+sudo /opt/sentinelle/sentinelle
+```
 
 ### Everything else, plus checks
 

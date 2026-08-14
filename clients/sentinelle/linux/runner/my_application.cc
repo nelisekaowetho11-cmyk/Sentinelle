@@ -42,17 +42,21 @@ static void my_application_activate(GApplication* application) {
     }
   }
 #endif
+  // The package name is not what anyone should be shown: this is the title in
+  // the task bar, the window list and the alt-tab switcher.
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "veil_client");
+    gtk_header_bar_set_title(header_bar, "Sentinelle");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "veil_client");
+    gtk_window_set_title(window, "Sentinelle");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  // Matches the size Dart asks window_manager for, so the window does not
+  // flash at the template's 1280x720 before being resized on the first frame.
+  gtk_window_set_default_size(window, 1020, 700);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
