@@ -144,9 +144,18 @@ android {
 // A Play artefact signed with the debug key is worse than no artefact: the
 // upload is rejected, and the version code is burnt in the meantime.
 gradle.taskGraph.whenReady {
-    val buildingPlayRelease = allTasks.any {
-        it.project == project &&
-            (it.name.contains("PlayRelease") || it.name.contains("playRelease"))
+    // Only the tasks that actually produce the artefact count. A sideload build
+    // still drags three Play-named tasks into the graph — AGP's own
+    // `prePlayReleaseBuild` anchor, and Flutter's `compileFlutterBuildPlayRelease`
+    // and `packJniLibsflutterBuildPlayRelease` — all skipped, all matching a
+    // bare `contains("PlayRelease")`. That made this guard fire on every build
+    // without the key, so `--flavor sideload` could not be built at all on a
+    // machine that has no upload key: CI, or anyone who clones the repo.
+    val producesArtefact = listOf("assemble", "bundle", "package", "sign")
+    val buildingPlayRelease = allTasks.any { task ->
+        task.project == project &&
+            task.name.contains("PlayRelease") &&
+            producesArtefact.any { task.name.startsWith(it) }
     }
     if (buildingPlayRelease && !hasReleaseKey) {
         throw GradleException(
