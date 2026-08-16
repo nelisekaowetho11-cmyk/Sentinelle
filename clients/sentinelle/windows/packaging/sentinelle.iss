@@ -82,6 +82,36 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#AppExeName} /T"; Flags: ru
 Type: filesandordirs; Name: "{localappdata}\{#AppPublisher}\{#AppName}"
 
 [Code]
+{ Close a running copy before any file is written.
+
+  A running Sentinelle holds Sentinelle.exe and data\app.so open, and Windows
+  refuses to overwrite either. CloseApplications does not always catch it —
+  the window can be hidden in the tray, where the Restart Manager cannot see
+  it — and the install then reports success having replaced everything except
+  the two files that carry the code. The result is the new version's assets
+  wrapped around the old version's binary, which reports the old version and
+  is very hard to explain afterwards. }
+procedure KillProcess(const ExeName, Flags: String);
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), Flags + ' /IM ' + ExeName, '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  { Asked politely first: this sends a close request, which lets the app run
+    its own shutdown and put the system proxy back the way it found it. }
+  KillProcess('Sentinelle.exe', '');
+  Sleep(2500);
+  { Then not politely. A window hidden in the tray ignores the request above,
+    and an update that silently does nothing is worse than a lost session. }
+  KillProcess('Sentinelle.exe', '/F /T');
+  KillProcess('sing-box.exe', '/F /T');
+  Result := '';
+end;
+
 { Put the Windows proxy back if an uninstall happens while the app had it set.
   The app does this itself on exit, but an uninstall after a crash should not
   leave the machine pointing at a proxy that no longer exists. }
