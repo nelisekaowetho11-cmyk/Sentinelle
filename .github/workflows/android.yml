@@ -113,6 +113,31 @@ jobs:
             echo "::error::The keystore decoded but will not open. Usually a truncated paste — compare the length above against what the copy command reports."
             exit 1
           fi
+
+          # AGP looks in $ANDROID_SDK_HOME/.android before it falls back to the
+          # home directory, and some runner images set that variable. When they
+          # do, the keystore restored above is never opened: Gradle finds none
+          # where it looked, silently mints a fresh one, and the APK comes out
+          # signed by a key no installed copy of the app will accept. Pinning it
+          # to $HOME makes both paths the same directory.
+          echo "ANDROID_SDK_HOME=$HOME" >> "$GITHUB_ENV"
+
+          # Said now, while the only thing that could be wrong is the secret.
+          # After the build, a mismatch could equally mean Gradle ignored this
+          # file — and those two need different fixes.
+          # `-v`, because plain `-list` labels it "Certificate fingerprint
+          # (SHA-256)" while the verbose form says "SHA256:" — and the colon
+          # inside the plain label is what makes a naive cut lose the value.
+          RESTORED=$(keytool -list -v -keystore ~/.android/debug.keystore \
+              -storepass android -alias androiddebugkey 2>/dev/null |
+            grep -i '^[[:space:]]*SHA256:' | head -1 |
+            sed 's/.*SHA256:[[:space:]]*//' | tr -d ': \r' | tr 'a-f' 'A-F')
+          echo "restored keystore certificate: $RESTORED"
+          EXPECTED_CLEAN=$(echo "${{ vars.ANDROID_SIGNING_SHA256 }}" | tr -d ': ' | tr 'a-f' 'A-F')
+          if [ -n "$EXPECTED_CLEAN" ] && [ "$RESTORED" != "$EXPECTED_CLEAN" ]; then
+            echo "::error::The secret holds a different keystore than the one ANDROID_SIGNING_SHA256 describes. Re-copy from the machine that has published builds before."
+            exit 1
+          fi
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Dependencies
