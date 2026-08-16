@@ -71,11 +71,26 @@ jobs:
             exit 0
           fi
           mkdir -p ~/.android
-          # Whitespace-tolerant on purpose. The value is pasted by hand into the
-          # GitHub UI, usually from a Windows clipboard, and `base64 -d` ignores
-          # a stray newline but rejects a carriage return outright — the whole
-          # secret then fails to decode over one invisible character.
-          printf '%s' "$KEYSTORE_B64" | tr -d '\r\n \t' | base64 -d > ~/.android/debug.keystore
+          # Whitespace-tolerant, and armour-tolerant. The value is pasted by
+          # hand into the GitHub UI: `base64 -d` rejects a carriage return from
+          # a Windows clipboard, and `certutil -encode` wraps its output in
+          # -----BEGIN CERTIFICATE----- lines that are not base64 either.
+          CLEAN=$(printf '%s' "$KEYSTORE_B64" | sed 's/-----[A-Za-z ]*-----//g' | tr -d '\r\n \t')
+
+          # Said out loud before decoding, because "invalid input" on its own
+          # gives nothing to act on and the value cannot be printed. None of
+          # this reveals the secret — only its shape.
+          LEN=${#CLEAN}
+          BAD=$(printf '%s' "$CLEAN" | tr -d 'A-Za-z0-9+/=' | wc -c)
+          echo "length after cleaning: $LEN  (a 2618-byte keystore encodes to 3492)"
+          echo "length mod 4: $((LEN % 4))  — anything but 0 means a truncated paste"
+          echo "characters outside the base64 alphabet: $BAD"
+          if [ "$BAD" -ne 0 ]; then
+            echo "::error::The secret is not base64. Set it with: [Convert]::ToBase64String([IO.File]::ReadAllBytes(\"\$env:USERPROFILE\\.android\\debug.keystore\")) | Set-Clipboard"
+            exit 1
+          fi
+
+          printf '%s' "$CLEAN" | base64 -d > ~/.android/debug.keystore
 
           # Decoding to something that is not a keystore is worse than failing
           # to decode at all: Gradle would quietly create its own and sign with
@@ -89,6 +104,15 @@ jobs:
               exit 1
               ;;
           esac
+
+          # A paste that was cut short decodes cleanly and even keeps the right
+          # first four bytes, so the check above waves it through. Opening the
+          # keystore is the only thing that reads far enough to notice.
+          if ! keytool -list -keystore ~/.android/debug.keystore \
+                 -storepass android -alias androiddebugkey > /dev/null 2>&1; then
+            echo "::error::The keystore decoded but will not open. Usually a truncated paste — compare the length above against what the copy command reports."
+            exit 1
+          fi
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Dependencies
