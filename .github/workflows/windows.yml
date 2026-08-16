@@ -1,0 +1,113 @@
+name: Windows client
+
+# Builds the Windows client and packages it two ways: the Inno Setup installer
+# that most people want, and a portable .zip that needs no administrator to
+# unpack.
+#
+# Run it from the Actions tab, or push a tag like v1.7.5 for a release.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'clients/sentinelle/**'
+      - '.github/workflows/windows.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: clients/sentinelle
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.6
+          cache: true
+
+      - name: Versions
+        run: |
+          flutter --version
+          python --version
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test --exclude-tags e2e
+
+      - name: Build
+        run: flutter build windows --release
+
+      # The app can fetch its own core on first run, but the people this is
+      # built for are frequently on networks that cannot reach GitHub — which
+      # is the whole reason they wanted a VPN. Shipping the core inside the
+      # installer means the first launch needs nothing but the panel.
+      - name: Bundle sing-box
+        run: python tool/bundle_core.py --dest build/windows/x64/runner/Release
+
+      - name: Package
+        id: package
+        run: |
+          $bundle = "build/windows/x64/runner/Release"
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$').Matches[0].Groups[1].Value.Trim()
+          $version = $version -replace '\+', '-'
+          "version=$version" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          # Portable build first, so the zip contains the same tree the
+          # installer is about to wrap.
+          Compress-Archive -Path "$bundle/*" `
+            -DestinationPath "dist/Sentinelle-$version-windows-x64-portable.zip"
+
+          # Inno Setup ships on the GitHub image, but pinning a path that may
+          # move between images is how a green build turns red for no reason.
+          $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*\ISCC.exe' -ErrorAction SilentlyContinue |
+                  Select-Object -First 1 -ExpandProperty FullName
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*\ISCC.exe' |
+                    Select-Object -First 1 -ExpandProperty FullName
+          }
+          & $iscc windows\packaging\sentinelle.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinelle-windows-${{ steps.package.outputs.version }}
+          path: clients/sentinelle/dist/*
+          if-no-files-found: error
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: clients/sentinelle/dist/*
+          body: |
+            Windows build of the Sentinelle client, 64-bit, with sing-box
+            already bundled — the first run needs nothing but your panel.
+
+            `SentinelleSetup-*.exe` installs to Program Files and adds a
+            Start menu entry. The `-portable.zip` unpacks and runs anywhere,
+            with no administrator needed to install it.
+
+            Proxy mode runs as an ordinary user. VPN (full tunnel) mode needs
+            administrator rights, and the app can restart itself elevated when
+            you turn it on.
