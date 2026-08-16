@@ -71,7 +71,24 @@ jobs:
             exit 0
           fi
           mkdir -p ~/.android
-          echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+          # Whitespace-tolerant on purpose. The value is pasted by hand into the
+          # GitHub UI, usually from a Windows clipboard, and `base64 -d` ignores
+          # a stray newline but rejects a carriage return outright — the whole
+          # secret then fails to decode over one invisible character.
+          printf '%s' "$KEYSTORE_B64" | tr -d '\r\n \t' | base64 -d > ~/.android/debug.keystore
+
+          # Decoding to something that is not a keystore is worse than failing
+          # to decode at all: Gradle would quietly create its own and sign with
+          # a key nobody's phone accepts. Both formats are legitimate — Android
+          # Studio wrote JKS (feedfeed) for years and PKCS12 (3082) since.
+          MAGIC=$(head -c 4 ~/.android/debug.keystore | od -A n -t x1 | tr -d ' \n')
+          case "$MAGIC" in
+            feedfeed*|3082*) ;;
+            *)
+              echo "::error::The secret did not decode into a keystore (starts with '$MAGIC'). Re-copy it — see the header of this workflow for the command."
+              exit 1
+              ;;
+          esac
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
       - name: Dependencies
