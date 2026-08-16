@@ -435,15 +435,38 @@ class AppState extends ChangeNotifier {
   /// or the widget, in which case treat it exactly like the user pressing
   /// Disconnect inside the app.
   Future<void> _engageKillSwitchUnlessUserStopped() async {
-    final asked = await AndroidShortcuts.consumeUserStop();
-    // The user may have reconnected while we were asking.
-    if (isConnected || isBusyConnecting) return;
-    if (asked) {
+    void userAsked() {
       _wantConnection = false;
       _tunnelEstablished = false;
       notifyListeners();
+    }
+
+    // First, the answer that came with the state itself. The core reports both
+    // on one broadcast, so this cannot be raced and needs no round trip.
+    if (_engine.lastStopWasUserRequested) {
+      userAsked();
       return;
     }
+
+    // Then the native latch, for the stops that never reach the core's
+    // broadcast — a widget tap on a tunnel that was already dying, most of
+    // all. Polled rather than asked once: it is set by a receiver in this
+    // process, and nothing orders that against the state event that brought us
+    // here. The recovery loop's first tick is five seconds out, so a second of
+    // patience is free, and guessing wrong costs the user a VPN they switched
+    // off turning itself back on.
+    if (Platform.isAndroid) {
+      for (var attempt = 0; attempt < 4; attempt++) {
+        if (isConnected || isBusyConnecting) return;
+        if (await AndroidShortcuts.consumeUserStop()) {
+          userAsked();
+          return;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    }
+
+    if (isConnected || isBusyConnecting) return;
     if (_wantConnection && killSwitchEnabled) _engageKillSwitch();
   }
 
@@ -1315,17 +1338,13 @@ class AppState extends ChangeNotifier {
         _wantConnection &&
         _tunnelEstablished &&
         killSwitchEnabled) {
-      if (Platform.isAndroid) {
-        // …unless somebody outside the app asked for the stop. Only Android
-        // has those surfaces (the notification's DISCONNECT button, the tile,
-        // the widget) and only the native side knows, so the answer arrives a
-        // channel round-trip later. That is well inside the recovery loop's
-        // five-second first tick, and holding the kill switch off until we
-        // know is what stops a tap on DISCONNECT reconnecting the VPN.
-        unawaited(_engageKillSwitchUnlessUserStopped());
-      } else {
-        _engageKillSwitch();
-      }
+      // …unless somebody outside the app asked for the stop. Only Android has
+      // those surfaces — the notification's DISCONNECT button, the quick
+      // settings tile, the home screen widget — but the question is asked on
+      // every platform so that the answer is not buried behind a host check
+      // no test can reach. Holding the kill switch off until it is answered is
+      // what stops a tap on DISCONNECT turning the VPN back on.
+      unawaited(_engageKillSwitchUnlessUserStopped());
     }
     if (s == VpnState.connected && killSwitchEngaged) {
       killSwitchEngaged = false;

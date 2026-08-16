@@ -26,6 +26,11 @@ class MethodChannelFlutterV2ray extends FlutterV2rayPlatform {
           upload: int.parse(event[3]),
           download: int.parse(event[4]),
           state: event[5],
+          // Veil: appended by V2rayReceiver. Read by length rather than
+          // assumed, so a status event from an older native side — one still
+          // in memory across a hot restart, say — is short rather than fatal.
+          userRequestedStop:
+              event.length > 6 && event[6].toString().toLowerCase() == 'true',
         ));
       }
     });

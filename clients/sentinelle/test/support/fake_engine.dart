@@ -92,6 +92,11 @@ class FakeVpnEngine implements VpnEngine {
   @override
   String? lastFailure;
 
+  /// Settable, so a test can play the part of a stop that came from the
+  /// notification, the tile or the widget.
+  @override
+  bool lastStopWasUserRequested = false;
+
   @override
   void dispose() {
     _stateCtrl.close();

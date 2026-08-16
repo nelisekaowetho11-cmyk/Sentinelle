@@ -4,6 +4,7 @@
 [![Android](https://img.shields.io/badge/Android-9%2B-3ddc84.svg)](clients/sentinelle)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078d4.svg)](clients/sentinelle)
 [![macOS](https://img.shields.io/badge/macOS-10.15%2B-000000.svg)](clients/sentinelle)
+[![Linux](https://img.shields.io/badge/Linux-x86--64-f0ad4e.svg)](clients/sentinelle)
 
 A self-hosted VPN stack: a management panel, cross-platform clients, and a
 tunnel for getting traffic out of a filtered network.
@@ -32,7 +33,7 @@ carry any traffic at all between two servers.
 | Project | What it is | Language |
 |---|---|---|
 | [`panel/`](panel) | Web panel: users, inbounds, quotas, subscriptions, resellers | Python (Flask) + React |
-| [`clients/sentinelle/`](clients/sentinelle) | VPN client for Android, Windows and macOS | Dart (Flutter) |
+| [`clients/sentinelle/`](clients/sentinelle) | VPN client for Android, Windows, macOS and Linux | Dart (Flutter) |
 | [`ipxtun/`](ipxtun) | Encrypted tunnel over raw IP or ICMP, for filtered networks | Go |
 
 ---

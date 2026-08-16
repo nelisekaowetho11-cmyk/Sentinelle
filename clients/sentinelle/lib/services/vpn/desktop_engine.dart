@@ -588,6 +588,12 @@ class DesktopVpnEngine implements VpnEngine {
     await _stopCore(restoreProxy: true);
   }
 
+  /// Desktop has no stop that arrives from outside the app: the tray menu and
+  /// the window both go through [disconnect], which takes the state down with
+  /// it rather than letting the kill switch see an unexplained drop.
+  @override
+  bool get lastStopWasUserRequested => false;
+
   @override
   Future<int> measureDelay(ServerConfig server, VpnEngineOptions options) async {
     final sw = Stopwatch()..start();

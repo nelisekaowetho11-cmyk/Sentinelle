@@ -465,9 +465,14 @@ public final class V2rayCoreManager {
         // Build the notification
         notificationRemark = v2rayConfig.REMARK;
         lastNotificationText = null;
+        readKillSwitch(context);
         notificationBuilder = new NotificationCompat.Builder(context, notificationChannelID)
                 .setSmallIcon(v2rayConfig.APPLICATION_ICON)
                 .setContentTitle(v2rayConfig.REMARK)
+                // Veil: visible without expanding the notification, which is
+                // where it matters — the kill switch changes what the button
+                // below it means, and that is worth knowing before tapping it.
+                .setSubText(killSwitchOn ? "Kill switch on" : null)
                 .setContentText(buildTrafficLine())
                 // The one-line form is what shows on the lock screen; the
                 // expanded form has room for the session totals as well.
@@ -584,10 +589,42 @@ public final class V2rayCoreManager {
 
     /** The expanded form: speeds, session totals and how long it has been up. */
     private String buildTrafficDetail() {
-        return buildTrafficLine()
+        String detail = buildTrafficLine()
                 + "\nTotal  " + DOWN + " " + formatBytes(totalDownload)
                 + "   " + UP + " " + formatBytes(totalUpload)
                 + "\nConnected " + SERVICE_DURATION;
+        if (killSwitchOn) {
+            detail += "\nKill switch on — pressing DISCONNECT stops the "
+                    + "tunnel and leaves it stopped.";
+        }
+        return detail;
+    }
+
+    /**
+     * Veil: whether the app's kill switch is on, read once per connection.
+     *
+     * It belongs to the app, not to the core, and this code runs in the
+     * :RunSoLibV2RayDaemon process where none of the app's own state exists.
+     * Reading the setting straight out of Flutter's own preferences file is
+     * what makes the notification say the same thing for a tunnel started from
+     * the app, the widget and the tile alike — passing it through the config
+     * would only have covered the first.
+     *
+     * Read at connect time rather than every second: each process caches this
+     * file separately, so a change made by the app while connected would not
+     * reach us anyway, and the setting takes effect on the next connection.
+     */
+    private boolean killSwitchOn = false;
+
+    private void readKillSwitch(Context context) {
+        try {
+            killSwitchOn = context
+                    .getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                    // Defaults to true in the app, so a missing entry means on.
+                    .getBoolean("flutter.kill_switch", true);
+        } catch (Exception e) {
+            killSwitchOn = false;
+        }
     }
 
     private static String formatBytes(long bytes) {

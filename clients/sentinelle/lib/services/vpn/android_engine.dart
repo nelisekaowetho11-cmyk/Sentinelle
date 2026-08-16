@@ -66,6 +66,20 @@ class AndroidVpnEngine implements VpnEngine {
     if (!_stateCtrl.isClosed) _stateCtrl.add(s);
   }
 
+  /// True when the last stop reported by the core was asked for by a person.
+  ///
+  /// The kill switch exists to catch a tunnel that *failed*, and it recovers by
+  /// reconnecting. Tapping DISCONNECT in the notification produces the same
+  /// "disconnected" as a crash does, so without this the kill switch treated a
+  /// deliberate stop as a fault and turned the VPN back on.
+  ///
+  /// Read synchronously by [AppState] the moment the state arrives. It used to
+  /// ask the native side over a method channel instead, which raced the
+  /// broadcast that carries the answer.
+  @override
+  bool get lastStopWasUserRequested => _stopWasUserRequested;
+  bool _stopWasUserRequested = false;
+
   void _onStatus(V2RayStatus status) {
     _stats = VpnStats(
       uploadSpeed: status.uploadSpeed,
@@ -90,6 +104,10 @@ class AndroidVpnEngine implements VpnEngine {
         if (!_starting) {
           _verifying = false;
           _cancelWatchdog();
+          // Latched *before* the state goes out, because whoever reacts to
+          // "disconnected" is exactly who needs to know whether a person asked
+          // for it. See [lastStopWasUserRequested].
+          _stopWasUserRequested = status.userRequestedStop;
           _emitState(VpnState.disconnected);
         }
         break;
@@ -222,6 +240,9 @@ class AndroidVpnEngine implements VpnEngine {
   @override
   Future<void> connect(ServerConfig server, VpnEngineOptions options) async {
     final generation = ++_generation;
+    // A new run must not inherit the last run's verdict, or the first genuine
+    // drop after a deliberate disconnect would be read as deliberate too.
+    _stopWasUserRequested = false;
     await initialize();
     if (generation != _generation) return;
     _proxyOnly = options.mode == TunnelMode.proxy;

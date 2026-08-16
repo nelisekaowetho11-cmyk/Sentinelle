@@ -114,6 +114,17 @@ abstract class VpnEngine {
   Future<void> connect(ServerConfig server, VpnEngineOptions options);
   Future<void> disconnect();
 
+  /// True when the last stop the engine reported was asked for by a person
+  /// rather than suffered.
+  ///
+  /// On the interface for the same reason [lastFailure] is: the state layer
+  /// used to type-check for the Android engine to find this out, which made it
+  /// untestable through a fake and invisible to every other engine. Only
+  /// Android has stops that arrive from outside the app — the notification's
+  /// DISCONNECT button, the quick settings tile, the home screen widget — so
+  /// elsewhere it is simply false.
+  bool get lastStopWasUserRequested;
+
   /// Round-trip latency to a server, in ms. -1 when unreachable.
   Future<int> measureDelay(ServerConfig server, VpnEngineOptions options);
 

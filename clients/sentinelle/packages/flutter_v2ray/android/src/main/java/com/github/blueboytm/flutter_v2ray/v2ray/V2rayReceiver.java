@@ -22,6 +22,16 @@ public class V2rayReceiver extends BroadcastReceiver {
             list.add(String.valueOf(intent.getLongExtra("UPLOAD_TRAFFIC", 0)));
             list.add(String.valueOf(intent.getLongExtra("DOWNLOAD_TRAFFIC", 0)));
             list.add(intent.getExtras().getSerializable("STATE").toString().substring(6));
+            // Veil: whether the stop this reports was asked for by a person.
+            //
+            // It rides the same broadcast as the state so Dart learns both in
+            // one event. Asking the native side separately — which is what the
+            // app used to do — raced two receivers registered in the same
+            // process for the same intent, and Android does not order those.
+            // When the question lost, a tap on the notification's DISCONNECT
+            // looked like an unexplained drop and the kill switch reconnected
+            // the tunnel a few seconds later.
+            list.add(String.valueOf(intent.getBooleanExtra("USER_STOP", false)));
             vpnStatusSink.success(list);
         } catch (Exception e) {
             Log.e("V2rayReceiver", "onReceive failed", e);
