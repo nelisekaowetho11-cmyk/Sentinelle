@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,17 +12,12 @@ import '../models/sources.dart';
 import '../theme.dart' show AppThemeMode;
 import 'routing.dart';
 
-/// Persisted app state: credentials, last session snapshot and user settings.
 class Storage {
   Storage._(this._p);
   final SharedPreferences _p;
 
   static Storage? _instance;
   static Storage get I => _instance!;
-
-  /// Null until [init] has run. Lets code that merely *prefers* persistence
-  /// — the device identity, for one — work before or without it, instead of
-  /// exploding on a null assertion.
   static Storage? get maybeI => _instance;
 
   static Future<Storage> init() async {
@@ -29,16 +25,11 @@ class Storage {
     return _instance!;
   }
 
-  /// Drops the cached singleton so the next [init] picks up fresh preferences.
-  ///
-  /// Without this a test's writes survive into the next test: `init` only
-  /// builds the instance once, so re-mocking SharedPreferences alone changes
-  /// nothing.
   @visibleForTesting
   static void resetForTests() => _instance = null;
 
-  // ── Account ────────────────────────────────────────────────────────────────
   static const _kBaseUrl = 'panel_base_url';
+  static const _defaultBaseUrl = 'https://primenet-vpn.onrender.com';
   static const _kToken = 'auth_token';
   static const _kUsername = 'saved_username';
   static const _kPassword = 'saved_password';
@@ -47,7 +38,7 @@ class Storage {
   static const _kServers = 'cached_servers';
   static const _kBrand = 'brand';
 
-  String get baseUrl => _p.getString(_kBaseUrl) ?? '';
+  String get baseUrl => _p.getString(_kBaseUrl) ?? _defaultBaseUrl;
   Future<void> setBaseUrl(String v) => _p.setString(_kBaseUrl, v);
 
   String? get token => _p.getString(_kToken);
@@ -105,7 +96,6 @@ class Storage {
     }
   }
 
-  // ── Preferences ────────────────────────────────────────────────────────────
   static const _kLastServer = 'last_server_id';
   static const _kAutoConnect = 'auto_connect';
   static const _kBypassLan = 'bypass_lan';
@@ -163,24 +153,19 @@ class Storage {
   bool get systemProxy => _p.getBool(_kSystemProxy) ?? true;
   Future<void> setSystemProxy(bool v) => _p.setBool(_kSystemProxy, v);
 
-  /// Apps named in the split list: Android package names, desktop executable
-  /// names (`chrome.exe`).
   List<String> get splitApps =>
       (_p.getStringList(_kSplitApps) ?? const <String>[]);
   Future<void> setSplitApps(List<String> v) => _p.setStringList(_kSplitApps, v);
 
-  /// How [splitApps] is interpreted.
   SplitMode get splitMode =>
       SplitMode.values.byName(_p.getString(_kSplitMode) ?? SplitMode.all.name);
   Future<void> setSplitMode(SplitMode v) => _p.setString(_kSplitMode, v.name);
 
-  /// Domains/IPs forced through the tunnel even when the default is direct.
   List<String> get tunnelRules =>
       (_p.getStringList(_kTunnelRules) ?? const <String>[]);
   Future<void> setTunnelRules(List<String> v) =>
       _p.setStringList(_kTunnelRules, v);
 
-  /// Domains/IPs that always bypass the tunnel.
   List<String> get bypassRules =>
       (_p.getStringList(_kBypassRules) ?? const <String>[]);
   Future<void> setBypassRules(List<String> v) =>
@@ -192,27 +177,15 @@ class Storage {
   bool get startMinimised => _p.getBool(_kStartMin) ?? false;
   Future<void> setStartMinimised(bool v) => _p.setBool(_kStartMin, v);
 
-  /// Full-tunnel mode.
-  ///
-  /// On desktop this is a TUN device and needs administrator rights, so proxy
-  /// mode is the default there. On Android it is the ordinary VpnService
-  /// tunnel and needs nothing special, so it is the default instead —
-  /// proxy-only is the deliberate choice on that platform.
   bool get vpnMode => _p.getBool(_kVpnMode) ?? Platform.isAndroid;
   Future<void> setVpnMode(bool v) => _p.setBool(_kVpnMode, v);
 
-  /// Desktop only — closing the window hides to the tray instead of quitting.
   bool get closeToTray => _p.getBool(_kCloseToTray) ?? false;
   Future<void> setCloseToTray(bool v) => _p.setBool(_kCloseToTray, v);
 
-  /// Hold traffic closed when the tunnel drops on its own, instead of letting
-  /// it fall back to the open connection. On by default: an unnoticed leak is
-  /// worse than an obvious outage, which is the whole point of the feature.
   bool get killSwitch => _p.getBool(_kKillSwitch) ?? true;
   Future<void> setKillSwitch(bool v) => _p.setBool(_kKillSwitch, v);
 
-  /// Server ids the user starred, as strings because SharedPreferences has no
-  /// int-list type.
   List<int> get favourites => (_p.getStringList(_kFavourites) ?? const [])
       .map(int.tryParse)
       .whereType<int>()
@@ -229,65 +202,37 @@ class Storage {
     await setFavourites(list);
   }
 
-  /// Connect page layout. The detailed view — live map, security panel, live
-  /// speeds — is the default; the simple view is the single-orb page.
   bool get detailedHome => _p.getBool(_kDetailedHome) ?? true;
   Future<void> setDetailedHome(bool v) => _p.setBool(_kDetailedHome, v);
 
-  /// Desktop only — the left menu shrinks to icons so it stops taking a fifth
-  /// of the window.
   bool get sidebarCollapsed => _p.getBool(_kSidebarCollapsed) ?? false;
   Future<void> setSidebarCollapsed(bool v) =>
       _p.setBool(_kSidebarCollapsed, v);
 
-  /// Light, dark, or whatever the operating system is set to.
-  ///
-  /// Defaults to following the system: the app is dark by design, but a machine
-  /// deliberately set to light mode is the user telling us something.
   AppThemeMode get themeMode => AppThemeMode.parse(_p.getString(_kThemeMode));
   Future<void> setThemeMode(AppThemeMode v) => _p.setString(_kThemeMode, v.name);
 
-  /// Desktop only — launch when the user signs in.
   bool get launchAtLogin => _p.getBool(_kLaunchAtLogin) ?? false;
   Future<void> setLaunchAtLogin(bool v) => _p.setBool(_kLaunchAtLogin, v);
 
-  // ── Leak guards ────────────────────────────────────────────────────────────
-
-  /// Force every DNS query through the tunnel and refuse plaintext lookups
-  /// that try to go around it.
   bool get dnsGuard => _p.getBool(_kDnsGuard) ?? true;
   Future<void> setDnsGuard(bool v) => _p.setBool(_kDnsGuard, v);
 
-  /// Drop IPv6 rather than let it escape a v4-only tunnel.
   bool get ipv6Guard => _p.getBool(_kIpv6Guard) ?? true;
   Future<void> setIpv6Guard(bool v) => _p.setBool(_kIpv6Guard, v);
 
-  /// Block the STUN/TURN discovery WebRTC uses to learn the real address.
   bool get webRtcGuard => _p.getBool(_kWebRtcGuard) ?? true;
   Future<void> setWebRtcGuard(bool v) => _p.setBool(_kWebRtcGuard, v);
 
-  /// Warn when the device clock does not match the exit country. Reporting
-  /// only — nothing in a VPN can change the system timezone — so it defaults
-  /// on: an unnoticed mismatch is exactly the kind of leak this catches.
   bool get timezoneGuard => _p.getBool(_kTimezoneGuard) ?? true;
   Future<void> setTimezoneGuard(bool v) => _p.setBool(_kTimezoneGuard, v);
 
-  /// Drop mDNS / LLMNR / SSDP / NetBIOS, which broadcast the device's real
-  /// hostname and addresses to whatever network it is sitting on.
   bool get lanGuard => _p.getBool(_kLanGuard) ?? true;
   Future<void> setLanGuard(bool v) => _p.setBool(_kLanGuard, v);
 
-  /// Refuse QUIC so browsers fall back to TCP.
-  ///
-  /// Off by default: it costs real speed on a tunnel that carries UDP well,
-  /// and it is a mitigation for a specific failure rather than a leak in its
-  /// own right.
   bool get quicGuard => _p.getBool(_kQuicGuard) ?? false;
   Future<void> setQuicGuard(bool v) => _p.setBool(_kQuicGuard, v);
 
-  // ── Per-app tunnels ────────────────────────────────────────────────────────
-
-  /// Applications pinned to a location of their own.
   List<AppBinding> get appBindings {
     final s = _p.getString(_kBindings);
     if (s == null) return const [];
@@ -303,14 +248,12 @@ class Storage {
   Future<void> setAppBindings(List<AppBinding> v) =>
       _p.setString(_kBindings, jsonEncode(v.map((e) => e.toJson()).toList()));
 
-  // ── Location sources ───────────────────────────────────────────────────────
   static const _kSources = 'location_sources';
   static const _kSourceServers = 'source_servers';
   static const _kSourceProfiles = 'source_profiles';
   static const _kAliases = 'server_aliases';
   static const _kGeo = 'server_geo';
 
-  /// Every account, subscription and manual import, in display order.
   List<LocationSource> get sources {
     final s = _p.getString(_kSources);
     if (s == null) return const [];
@@ -327,8 +270,6 @@ class Storage {
   Future<void> setSources(List<LocationSource> v) =>
       _p.setString(_kSources, jsonEncode(v.map((e) => e.toJson()).toList()));
 
-  /// Last known servers per source, so the picker is populated on the frame
-  /// after launch instead of after the network answers.
   Map<String, List<ServerConfig>> get cachedSourceServers {
     final s = _p.getString(_kSourceServers);
     if (s == null) return {};
@@ -355,7 +296,6 @@ class Storage {
             MapEntry(k, list.map((e) => e.toJson()).toList()))),
       );
 
-  /// Cached profile per account source.
   Map<String, Profile> get cachedSourceProfiles {
     final s = _p.getString(_kSourceProfiles);
     if (s == null) return {};
@@ -373,12 +313,6 @@ class Storage {
         jsonEncode(v.map((k, p) => MapEntry(k, p.toJson()))),
       );
 
-  // ── Per-server overrides ───────────────────────────────────────────────────
-  //
-  // Kept outside the server lists themselves and keyed by uid: the lists are
-  // replaced wholesale on every refresh, and a rename must not be one panel
-  // poll away from disappearing.
-
   Map<String, String> get aliases => _stringMap(_kAliases);
 
   Future<void> setAlias(String uid, String? name) async {
@@ -391,8 +325,6 @@ class Storage {
     await _p.setString(_kAliases, jsonEncode(map));
   }
 
-  /// Locations the user placed by hand, for configs whose source does not know
-  /// where they are.
   Map<String, GeoOverride> get geoOverrides {
     final s = _p.getString(_kGeo);
     if (s == null) return {};
@@ -427,8 +359,6 @@ class Storage {
     }
   }
 
-  /// Drops everything belonging to [sourceId] — used when a source is removed
-  /// so its renames and pins do not linger as orphans.
   Future<void> forgetSource(String sourceId) async {
     final servers = cachedSourceServers..remove(sourceId);
     await setCachedSourceServers(servers);
@@ -443,10 +373,6 @@ class Storage {
         _kGeo, jsonEncode(geo.map((k, v) => MapEntry(k, v.toJson()))));
   }
 
-  // ── Device identity ────────────────────────────────────────────────────────
-
-  /// Stable per-installation id, so the panel can count devices against the
-  /// account's limit without pinning anyone to an IP address.
   String get deviceId => _p.getString(_kDeviceId) ?? '';
   Future<void> setDeviceId(String v) => _p.setString(_kDeviceId, v);
 
