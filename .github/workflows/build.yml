@@ -7,16 +7,19 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -25,21 +28,26 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.41.6'
           cache: true
 
-      - name: Check Java version
-        run: java -version
+      - name: Force Flutter to use Java 17
+        run: |
+          flutter config --jdk-dir="$JAVA_HOME"
+          java -version
+          flutter doctor -v
 
       - name: Install dependencies
         working-directory: clients/sentinelle
         run: flutter pub get
 
-      - name: Build APK
+      - name: Build PRIME NET VPN
         working-directory: clients/sentinelle
-        run: flutter build apk --release
+        run: flutter build apk --release --flavor sideload
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Upload PRIME NET VPN APK
+        uses: actions/upload-artifact@v7
         with:
           name: PRIME-NET-VPN
-          path: clients/sentinelle/build/app/outputs/flutter-apk/app-release.apk
+          path: clients/sentinelle/build/app/outputs/flutter-apk/app-sideload-release.apk
+          if-no-files-found: error
