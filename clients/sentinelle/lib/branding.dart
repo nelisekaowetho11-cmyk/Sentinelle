@@ -3,7 +3,7 @@
 /// The panel's own `workspace_name` is shown as the account's brand inside the
 /// app; this is the name of the application itself — window title, taskbar,
 /// tray and launcher.
-const String kAppName = 'Sentinelle';
+const String kAppName = 'PrimeNet VPN';
 
 /// Window / task-manager title.
 const String kAppWindowTitle = '$kAppName — Secure VPN';
