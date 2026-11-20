@@ -1,5 +1,5 @@
 
-name: Build PRIME NET VPN APK
+name: Build PRIME NET VPN
 
 on:
   workflow_dispatch:
