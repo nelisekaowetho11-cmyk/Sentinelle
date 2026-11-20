@@ -1,5 +1,6 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="widget_description">Connect or disconnect Sentinelle with one tap.</string>
-    <string name="tile_label">Sentinelle</string>
+    <string name="widget_description">Connect or disconnect PrimeNet VPN with one tap.</string>
+    <string name="tile_label">PrimeNet VPN</string>
 </resources>
