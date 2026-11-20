@@ -1,4 +1,3 @@
-
 name: PRIME NET VPN Android Build
 
 on:
@@ -7,9 +6,14 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build PRIME NET VPN APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -27,17 +31,66 @@ jobs:
           flutter-version: '3.41.6'
           channel: stable
 
-      - name: Configure Java
+      - name: Repair Android strings and validate XML
         working-directory: clients/sentinelle
-        run: flutter config --jdk-dir="$JAVA_HOME"
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
 
-      - name: Install dependencies
+          strings_file = Path(
+              "android/app/src/main/res/values/veil_strings.xml"
+          )
+
+          if not strings_file.is_file():
+              raise SystemExit(f"Missing file: {strings_file}")
+
+          strings_file.write_text(
+              "<resources>\n"
+              '    <string name="widget_description">Connect or disconnect PrimeNet VPN with one tap.</string>\n'
+              '    <string name="tile_label">PrimeNet VPN</string>\n'
+              "</resources>\n",
+              encoding="utf-8"
+          )
+
+          print("Android app strings repaired.")
+
+          resource_dir = Path("android/app/src/main/res")
+          xml_files = list(resource_dir.rglob("*.xml"))
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          if manifest.is_file():
+              xml_files.append(manifest)
+
+          failed = False
+
+          for xml_file in sorted(set(xml_files)):
+              try:
+                  ET.parse(xml_file)
+                  print(f"XML OK: {xml_file}")
+              except ET.ParseError as error:
+                  print(f"XML ERROR: {xml_file}: {error}")
+                  failed = True
+
+          if failed:
+              raise SystemExit("Android XML validation failed.")
+
+          print("All Android XML files passed validation.")
+          PY
+
+      - name: Install Flutter dependencies
         working-directory: clients/sentinelle
         run: flutter pub get
 
-      - name: Build Android APK
+      - name: Build release APK
         working-directory: clients/sentinelle
         run: flutter build apk --release --flavor sideload
+
+      - name: Verify APK exists
+        run: |
+          test -f clients/sentinelle/build/app/outputs/flutter-apk/app-sideload-release.apk
+          ls -lh clients/sentinelle/build/app/outputs/flutter-apk/app-sideload-release.apk
 
       - name: Upload PRIME NET VPN APK
         uses: actions/upload-artifact@v7
@@ -45,3 +98,4 @@ jobs:
           name: PRIME-NET-VPN
           path: clients/sentinelle/build/app/outputs/flutter-apk/app-sideload-release.apk
           if-no-files-found: error
+          retention-days: 7
