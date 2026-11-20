@@ -1,14 +1,11 @@
 
-name: Build PRIME NET VPN APK
+name: PRIME NET VPN Android Build
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
-
-permissions:
-  contents: read
+  workflow_dispatch:
 
 jobs:
   build:
@@ -27,21 +24,18 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
           flutter-version: '3.41.6'
-          cache: true
+          channel: stable
 
-      - name: Force Flutter to use Java 17
-        run: |
-          flutter config --jdk-dir="$JAVA_HOME"
-          java -version
-          flutter doctor -v
+      - name: Configure Java
+        working-directory: clients/sentinelle
+        run: flutter config --jdk-dir="$JAVA_HOME"
 
       - name: Install dependencies
         working-directory: clients/sentinelle
         run: flutter pub get
 
-      - name: Build PRIME NET VPN
+      - name: Build Android APK
         working-directory: clients/sentinelle
         run: flutter build apk --release --flavor sideload
 
