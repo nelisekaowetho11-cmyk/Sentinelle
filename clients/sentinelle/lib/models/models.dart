@@ -1,3 +1,4 @@
+
 // Data models mirroring the panel's /api/client/* payloads.
 
 import '../branding.dart';
@@ -124,7 +125,9 @@ class Profile {
   static bool _bool(dynamic v) {
     if (v is bool) return v;
     if (v is num) return v != 0;
+
     final value = v?.toString().trim().toLowerCase() ?? '';
+
     return value == 'true' ||
         value == '1' ||
         value == 'yes' ||
@@ -133,9 +136,11 @@ class Profile {
 
   static Map<String, dynamic> _stringMap(Map map) {
     final result = <String, dynamic>{};
+
     map.forEach((key, value) {
       if (key != null) result[key.toString()] = value;
     });
+
     return result;
   }
 }
@@ -344,9 +349,11 @@ class ServerConfig {
     if (value is! Map) return <String, dynamic>{};
 
     final result = <String, dynamic>{};
+
     value.forEach((key, item) {
       if (key != null) result[key.toString()] = item;
     });
+
     return result;
   }
 
@@ -354,6 +361,7 @@ class ServerConfig {
     for (final value in values) {
       if (value != null) return value;
     }
+
     return null;
   }
 
@@ -362,14 +370,17 @@ class ServerConfig {
       if (value == null) continue;
 
       final result = value.toString().trim();
+
       if (result.isNotEmpty) return result;
     }
+
     return '';
   }
 
   static int? _nullableInt(dynamic value) {
     if (value == null) return null;
     if (value is num) return value.toInt();
+
     return int.tryParse(value.toString().trim());
   }
 
@@ -379,6 +390,20 @@ class ServerConfig {
 
   static String _str(dynamic value, [String fallback = '']) {
     return value == null ? fallback : value.toString();
+  }
+
+  // This helper belongs to ServerConfig because Profile's private
+  // static _bool method is not accessible from this class.
+  static bool _bool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+
+    final text = value?.toString().trim().toLowerCase() ?? '';
+
+    return text == 'true' ||
+        text == '1' ||
+        text == 'yes' ||
+        text == 'on';
   }
 
   static bool _readMux(dynamic value) {
@@ -405,7 +430,7 @@ class ServerConfig {
   /// [2001:db8::1]:8080
   /// http://proxy.example.com:8080
   static Map<String, dynamic> _splitProxyEndpoint(String input) {
-    var value = input.trim();
+    final value = input.trim();
 
     if (value.isEmpty) {
       return <String, dynamic>{};
@@ -430,6 +455,7 @@ class ServerConfig {
 
         if (remainder.startsWith(':')) {
           final parsedPort = int.tryParse(remainder.substring(1));
+
           return {
             'host': host,
             if (parsedPort != null) 'port': parsedPort,
@@ -463,6 +489,7 @@ class ServerConfig {
   static double? _n(dynamic value) {
     if (value == null) return null;
     if (value is num) return value.toDouble();
+
     return double.tryParse(value.toString());
   }
 
@@ -575,15 +602,19 @@ class ServerConfig {
 
   String get displayName {
     final a = alias?.trim() ?? '';
+
     if (a.isNotEmpty) return a;
+
     return name.isEmpty ? (tag.isEmpty ? address : tag) : name;
   }
 
   String? get secondaryName {
     final a = alias?.trim() ?? '';
+
     if (a.isEmpty) return null;
 
     final real = name.isEmpty ? address : name;
+
     return real == a ? null : real;
   }
 
@@ -595,6 +626,7 @@ class ServerConfig {
 
     for (final sep in [' · ', ' — ', ' - ']) {
       final i = name.indexOf(sep);
+
       if (i > 0) return name.substring(i + sep.length).trim();
     }
 
@@ -614,6 +646,7 @@ class ServerConfig {
   String get displayLocation {
     if (region.isNotEmpty) return region;
     if (country.isNotEmpty) return countryName(country);
+
     return address;
   }
 
@@ -761,6 +794,7 @@ class GeoOverride {
   static double? _n(dynamic value) {
     if (value == null) return null;
     if (value is num) return value.toDouble();
+
     return double.tryParse(value.toString());
   }
 }
